@@ -32,6 +32,8 @@ function bindErrorText(t: (typeof UI_COPY)[UiLanguage], error: string): string {
       return t.hunterTooManyAttempts;
     case 'invalid_or_expired_code':
       return t.hunterCodeInvalid;
+    case 'consent_required':
+      return t.dataConsentRequired;
     default:
       return t.hunterError;
   }
@@ -114,7 +116,15 @@ export default function HunterProfileCard({
       // 去 @：用户习惯粘贴 @handle，X handle 存储不带 @
       const handle = xHandle.trim().replace(/^@+/, '');
       const result = await saveHunterProfile(name.trim(), bio.trim(), handle);
-      notify(result.ok ? t.hunterProfileSaved : result.invalid ? t.hunterXHandleInvalid : t.hunterError);
+      notify(
+        result.ok
+          ? t.hunterProfileSaved
+          : result.error === 'consent_required'
+            ? t.dataConsentRequired
+            : result.invalid
+              ? t.hunterXHandleInvalid
+              : t.hunterError,
+      );
       onChanged?.();
     } finally {
       setBusy(false);

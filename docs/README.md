@@ -7,6 +7,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [USAGE.md](USAGE.md) | 使用教程：安装、上手、打野排位、设置项、安全边界、常见问题 |
+| [FIREFOX.md](FIREFOX.md) | Firefox 独立 fork 的构建、临时加载、ZIP 打包与 manifest 说明 |
 | [PRIVACY.md](../PRIVACY.md) | 双语隐私政策 |
 | [CHANGELOG.md](../CHANGELOG.md) | 版本更新日志 |
 | [DISCLAIMER.md](../DISCLAIMER.md) | 名单公示免责声明 |
@@ -15,7 +16,7 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [VISION.md](VISION.md) | 产品定位与边界（只做 X + Chrome 系，不做跨平台） |
+| [VISION.md](VISION.md) | 产品定位与边界（只做 X + Chrome / Firefox 桌面扩展） |
 | [PRODUCT.md](PRODUCT.md) | 产品功能全景 |
 | [ROADMAP.md](ROADMAP.md) | 版本路线与当前实施顺序 |
 | [HUNTING.md](HUNTING.md) | 打野排位赛产品方案（计分 / 称号 / 榜单 / 认领） |

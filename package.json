@@ -17,7 +17,10 @@
     "keyword-packs:check": "node scripts/build-keyword-packs.mjs --check",
     "keyword-packs:publish": "sh scripts/publish-keyword-packs.sh",
     "build:extension": "pnpm --filter @feedsieve/extension build",
-    "verify": "sh scripts/verify.sh"
+    "build:firefox": "pnpm --filter @feedsieve/extension build:firefox",
+    "zip:firefox": "pnpm --filter @feedsieve/extension zip:firefox",
+    "pack:firefox": "node scripts/pack-firefox.mjs",
+    "verify": "node scripts/verify.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

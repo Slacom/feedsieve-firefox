@@ -23,7 +23,7 @@ FeedSieve（福滤娃）是 X（Twitter）扩展：黄框标注垃圾账号，�
 **1. 社区名单同步（无你的任何数据）**
 扩展从官方 API `api.feedsieve.win` 下载社区名单快照（黑名单与验证正常白名单，JSON，经 SHA-256 校验与发布者签名验证）。该请求不包含你的任何个人数据。
 
-**2. 黑白名单上传（默认开启，可一键关闭）**
+**2. 黑白名单上传（Chrome 默认开启；Firefox 首次安装默认为仅本地，获得同意后可开启）**
 开启「名单上传」时，扩展同步你明确维护的本地黑名单和白名单，包括升级前已保存在本机的历史记录。它不上传仅仅浏览过、仅仅被标注但未处理的账号；也不上传关注保护名单、你的自定义关键词或官方词库的订阅/启停状态。公开词库下载不携带安装 ID、X 账号、浏览历史或自定义词；由本地关键词触发的拉黑会明确标记为仅本地，不会回灌成社区举报票；直接执行「社区清理」产生的批量拉黑同样只记录在本机。
 
 - 黑名单：`handle`（对方账号名）、可选 `x_user_id`、分类、话术指纹单向哈希、外链 hostname（最多 5 个）
@@ -31,6 +31,8 @@ FeedSieve（福滤娃）是 X（Twitter）扩展：黄框标注垃圾账号，�
 - 两者共同携带：本机随机安装 ID 与扩展版本号；服务端只保存安装 ID 的加盐哈希
 
 同一安装对同一账号只保留一个当前判断，后一次“拉黑 / 白名单”覆盖前一次。本地名单删除后会撤回当前票；原始上报证据仍用于误标审计，直到你提出服务器数据删除请求。关闭「名单上传」后完全不发送。
+
+Firefox 版本还会遵守 Firefox 内置的可选数据收集同意：未获得同意时不会执行名单、短语、抢救票或贡献统计的网络请求；本地识别和拉黑仍可用。用户在设置中重新开启「名单上传」时，扩展会在该次用户操作中请求同意。
 
 **3. 贡献统计查询**
 仅当本机曾上报过（存在安装 ID）时，打开扩展面板会查询你的累计贡献数。请求经 POST body 发送安装 ID，返回纯数字。从未上报过的设备不产生此请求。
@@ -73,7 +75,7 @@ FeedSieve（福滤娃）是 X（Twitter）扩展：黄框标注垃圾账号，�
 **1. Community list sync (contains none of your data)**
 The extension downloads the community snapshot (JSON, SHA-256 verified) from the official API `api.feedsieve.win`. No personal data is included in this request.
 
-**2. Blocklist and allowlist uploads (default on, one toggle to disable)**
+**2. Blocklist and allowlist uploads (on by default in Chrome; Firefox starts local-only until consent)**
 When “List uploads” is enabled, the extension syncs the local blocklist and allowlist entries you explicitly maintain, including records already stored locally before an upgrade. Merely viewed or merely marked accounts are never uploaded. Neither is the following-protection list. Blocks performed by Community Clean are kept as local action records and do not create new community report votes.
 
 - Blocklist: `handle`, optional `x_user_id`, category, one-way content fingerprint, and up to five external link hostnames
@@ -81,6 +83,8 @@ When “List uploads” is enabled, the extension syncs the local blocklist and 
 - Both include a random local installation ID and extension version; the server stores only a salted hash of that ID
 
 Each installation has only one current judgment per account, so a later block/allow decision replaces the earlier one. Removing a local list entry retracts the current vote; original evidence remains for false-positive auditing until you request server-side deletion. Turn off “List uploads” to stop all such transmissions.
+
+The Firefox build also honors Firefox's built-in optional data-collection consent. Without consent, it blocks list, phrase, rescue-vote, and contribution-stat network requests while local detection and blocking continue. Re-enabling “List uploads” requests consent in the same user action.
 
 **3. Contribution stats**
 Only if this device has contributed before, opening the popup queries your cumulative counts. The installation ID is sent in a POST body; the response is numbers only. Devices that never contributed make no such request.

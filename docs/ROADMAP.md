@@ -95,14 +95,14 @@ AI 识别（原 v0.5 规划）顺延至 v0.5.x / v0.6：**AI 是最后一层识�
 - ~~Pack subscription~~
 - ~~Import / Export~~
 - ~~Public Pack Registry~~
-- ~~Firefox~~
+- Firefox 独立 fork（已实现基础构建与原生侧栏适配）
 - ~~Safari 评估~~
 - ~~Developer Adapter API / SDK~~
 - ~~更多平台 Adapter（YouTube / Instagram 评论区）~~
 
-**产品边界（用户拍板）：只做 X + Chrome 系浏览器。** 跨浏览器、跨平台均无价值，不做。
+**本 fork 的产品边界：只做 X + Chrome / Firefox 桌面浏览器。** Safari、移动端和其他平台不在当前范围内。
 
-2026-09-12 更新口径：Firefox / 移动端浏览器支持在未来会增加（长期路线，无排期），当前精力集中在 Chrome 版的功能完整性与稳定性上。同时非实测适配成果（如社区 Firefox PR #7）在支持明确排期前保持关闭留档。
+2026-09-12 更新口径：Firefox 构建已落地为独立目标，核心逻辑与 Chrome 共用；Firefox 实机安装和 X 登录态操作仍需要在本机完成最终验收。
 
 ## 当前实施顺序
 

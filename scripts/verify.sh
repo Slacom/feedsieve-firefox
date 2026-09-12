@@ -17,10 +17,13 @@ pnpm typecheck
 echo '==> test'
 pnpm test
 
-echo '==> test community-api (workerd)'
-pnpm --filter @feedsieve/community-api test
-
 echo '==> build extension'
 pnpm build:extension
+
+echo '==> package Firefox extension'
+pnpm pack:firefox
+
+echo '==> test community-api (workerd)'
+pnpm --filter @feedsieve/community-api test
 
 echo '==> all checks passed'

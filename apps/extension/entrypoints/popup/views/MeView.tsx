@@ -15,7 +15,7 @@ import {
   subscribeSafetyLedger,
 } from '../../../src/lib/queue/block-safety';
 import { UI_COPY, type UiLanguage } from '../../../src/lib/platform/i18n';
-import { getInstallationId } from '../../../src/lib/community/contribute';
+import { peekInstallationId } from '../../../src/lib/community/contribute';
 import { AppIcon } from './shared';
 import HunterProfileCard from './HunterProfile';
 import SettingsView from './SettingsView';
@@ -55,7 +55,7 @@ export default function MeView({
   useEffect(() => {
     void fetchHunterProfile().then(setProfile);
     void fetchHunterBoard().then(setBoard).catch(() => setBoard(null));
-    void getInstallationId().then(setInstallId);
+    void peekInstallationId().then((value) => setInstallId(value ?? ''));
     void getTodayStat().then((stat) => setTodayBlocked(stat.blocked));
     const applyLedger = (): void => {
       void loadSafetyLedger().then((ledger) => {

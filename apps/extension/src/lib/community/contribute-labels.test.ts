@@ -207,4 +207,34 @@ describe('本地黑白名单同步', () => {
       detection_source: 'manual',
     });
   });
+
+  it('Firefox 未授予可选数据同意时不执行黑白名单同步', async () => {
+    vi.stubGlobal('browser', {
+      storage: {
+        local: {
+          get: vi.fn(async (key: string) => ({ [key]: storage[key] })),
+          set: vi.fn(async (patch: Record<string, unknown>) => Object.assign(storage, patch)),
+        },
+      },
+      permissions: {
+        getAll: vi.fn().mockResolvedValue({ data_collection: [] }),
+      },
+      runtime: {
+        getManifest: () => ({
+          browser_specific_settings: {
+            gecko: { data_collection_permissions: { required: ['none'] } },
+          },
+        }),
+      },
+    });
+    storage.blockedAccounts = [{ handle: 'blocked_without_consent', blockedAt: 100 }];
+
+    await expect(syncLocalLabels()).resolves.toEqual({
+      blocked: 0,
+      allowed: 0,
+      retracted: 0,
+      pending: 0,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

@@ -11,6 +11,7 @@ import { getAllowlist, type FalsePositiveEvidence } from './allowlist';
 import { getBlockedAccounts } from './blocked-accounts';
 import { categoryForKeywordRuleId } from '../detection/keyword-rules';
 import { upgradeBlockedCategories } from './category-upgrade';
+import { hasFirefoxDataCollectionConsent } from '../platform/firefox-data-consent';
 
 export interface ContributionItem {
   handle: string;
@@ -94,6 +95,9 @@ export interface ContributionStats {
 
 export async function getContributionStats(): Promise<ContributionStats | null> {
   try {
+    if (!(await hasFirefoxDataCollectionConsent())) {
+      return null;
+    }
     const installationId = await peekInstallationId();
     // 本机从未同步过名单（无安装 ID）：零网络请求
     if (!installationId) {
@@ -170,7 +174,7 @@ export function contributeBlocks(items: ContributionItem[]): void {
  * 只上传短语本身；命中这些短语的账号走既有通用通道，短语不出这条链路。
  */
 export interface KeywordPhraseContributionOutcome {
-  status: 'recorded' | 'duplicate' | 'failed' | 'community_disabled';
+  status: 'recorded' | 'duplicate' | 'failed' | 'community_disabled' | 'consent_required';
 }
 
 export async function contributeKeywordPhrases(
@@ -179,6 +183,9 @@ export async function contributeKeywordPhrases(
   const settings = await getCommunitySettings();
   if (!settings.autoContribute) {
     return { status: 'community_disabled' };
+  }
+  if (!(await hasFirefoxDataCollectionConsent())) {
+    return { status: 'consent_required' };
   }
   try {
     const installationId = await getInstallationId();
@@ -210,6 +217,9 @@ export async function contributeKeywordPhrases(
 /** background 启动时先兼容补交旧版积压，再同步完整本地黑白名单。 */ export async function flushContributions(): Promise<void> {
   const settings = await getCommunitySettings();
   if (!settings.autoContribute) {
+    return;
+  }
+  if (!(await hasFirefoxDataCollectionConsent())) {
     return;
   }
   let backlog = await getBacklog();
@@ -253,6 +263,9 @@ export async function rescueHandle(
   try {
     const settings = await getCommunitySettings();
     if (!settings.autoContribute) {
+      return false;
+    }
+    if (!(await hasFirefoxDataCollectionConsent())) {
       return false;
     }
     const installationId = await getInstallationId();
@@ -305,6 +318,9 @@ export function syncLocalLabels(): Promise<LabelSyncSummary> {
 }
 
 async function runLocalLabelSync(): Promise<LabelSyncSummary> {
+  if (!(await hasFirefoxDataCollectionConsent())) {
+    return { blocked: 0, allowed: 0, retracted: 0, pending: 0 };
+  }
   const summary: LabelSyncSummary = { blocked: 0, allowed: 0, retracted: 0, pending: 0 };
   const settings = await getCommunitySettings();
   // 参与社区时先把存量 'other' 票按达标证据升级（只升不降），再收集同步期望状态

@@ -1,0 +1,4 @@
+# Hash-checked generated artifacts must keep their repository LF bytes on Windows.
+community/lists/official.json text eol=lf
+community/lists/blocklist.yaml text eol=lf
+community/keyword-packs/official.json text eol=lf

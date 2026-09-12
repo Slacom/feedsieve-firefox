@@ -309,4 +309,9 @@ export function normalizeManualInput(value: string): string | null {
   return /^[a-z0-9_]{1,15}$/.test(handle) ? handle : null;
 }
 
-export { getChromeSidePanel, type ChromeSidePanelApi } from '../../../src/lib/platform/sidepanel';
+export {
+  getChromeSidePanel,
+  getFirefoxSidebarAction,
+  type ChromeSidePanelApi,
+  type FirefoxSidebarActionApi,
+} from '../../../src/lib/platform/sidepanel';

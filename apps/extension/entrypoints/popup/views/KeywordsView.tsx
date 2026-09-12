@@ -78,6 +78,8 @@ export default function KeywordsView({ language, notify }: KeywordsViewProps) {
       notify(t.keywordContributed);
     } else if (outcome.status === 'community_disabled') {
       notify(t.localOnlyHint);
+    } else if (outcome.status === 'consent_required') {
+      notify(t.dataConsentRequired);
     } else {
       notify(t.syncFailed);
     }

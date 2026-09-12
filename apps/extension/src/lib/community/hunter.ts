@@ -8,6 +8,10 @@
 
 import { API_BASE } from '../platform/api-base';
 import { getInstallationId, peekInstallationId } from './contribute';
+import {
+  hasFirefoxDataCollectionConsent,
+  requestFirefoxDataCollectionConsent,
+} from '../platform/firefox-data-consent';
 
 // 弹窗每次打开都是新页面，内存缓存无效：缓存落 storage.local，跨打开复用。
 // TTL 与服务端榜单新鲜容忍（90s）同量级；网络失败回退陈旧数据而不是空态。
@@ -28,7 +32,7 @@ async function readHunterCache<T>(key: string, installationId: string | null, tt
     const stored = await browser.storage.local.get(key);
     const entry = stored[key] as CacheEntry<T> | undefined;
     if (!entry || Date.now() - entry.ts > ttl) return null;
-    if (entry.installationId && installationId && entry.installationId !== installationId) return null;
+    if ((entry.installationId ?? null) !== (installationId ?? null)) return null;
     return entry;
   } catch {
     return null;
@@ -94,7 +98,8 @@ export interface HunterBoard {
 
 /** 榜单速览（name/Top榜 + 我 + 总人数）。新鲜走缓存；失败回退陈旧缓存兜底空态。 */
 export async function fetchHunterBoard(): Promise<HunterBoard | null> {
-  const installationId = await peekInstallationId();
+  const canSendPersonalData = await hasFirefoxDataCollectionConsent();
+  const installationId = canSendPersonalData ? await peekInstallationId() : null;
   const fresh = await readHunterCache<HunterBoard>(BOARD_CACHE_KEY, installationId, BOARD_TTL_MS);
   if (fresh) return fresh.data;
   try {
@@ -140,7 +145,8 @@ export async function fetchHunterStatus(): Promise<HunterStatus> {
 }
 
 export async function openLeaderboard(mePrefix?: string | null): Promise<void> {
-  await browser.tabs.create({ url: leaderboardUrl(mePrefix) });
+  const canSendPersonalData = await hasFirefoxDataCollectionConsent();
+  await browser.tabs.create({ url: leaderboardUrl(canSendPersonalData ? mePrefix : null) });
 }
 
 export interface HunterProfileState {
@@ -153,7 +159,8 @@ export interface HunterProfileState {
 
 /** 当前猎手档案（设置区展示）。失败回退陈旧缓存；无缓存且无安装时 null。 */
 export async function fetchHunterProfile(): Promise<HunterProfileState | null> {
-  const installationId = await peekInstallationId();
+  const canSendPersonalData = await hasFirefoxDataCollectionConsent();
+  const installationId = canSendPersonalData ? await peekInstallationId() : null;
   if (!installationId) return null;
   const fresh = await readHunterCache<HunterProfileState>(PROFILE_CACHE_KEY, installationId, PROFILE_TTL_MS);
   if (fresh) return fresh.data;
@@ -183,6 +190,9 @@ export type HunterBindResult =
 
 /** 发验证码（安装 ID 在此刻惰性生成——想露脸才建档）。 */
 export async function bindHunterEmail(email: string): Promise<HunterBindResult> {
+  if (!(await requestFirefoxDataCollectionConsent())) {
+    return { ok: false, error: 'consent_required' };
+  }
   const installationId = await getInstallationId();
   try {
     const res = await fetch(`${API_BASE}/v1/player/bind-email`, {
@@ -203,6 +213,9 @@ export async function verifyHunterEmail(
   email: string,
   code: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  if (!(await requestFirefoxDataCollectionConsent())) {
+    return { ok: false, error: 'consent_required' };
+  }
   const installationId = await getInstallationId();
   try {
     const res = await fetch(`${API_BASE}/v1/player/verify`, {
@@ -224,8 +237,11 @@ export async function saveHunterProfile(
   displayName: string,
   bio: string,
   xHandle: string = '',
-): Promise<{ ok: boolean; invalid?: boolean }> {
+): Promise<{ ok: boolean; invalid?: boolean; error?: string }> {
   // 与绑定邮箱同口径：此刻才惰性建档——想露脸（哪怕只是写好简介等绑定）即建档
+  if (!(await requestFirefoxDataCollectionConsent())) {
+    return { ok: false, error: 'consent_required' };
+  }
   const installationId = await getInstallationId();
   if (!installationId) return { ok: false };
   try {

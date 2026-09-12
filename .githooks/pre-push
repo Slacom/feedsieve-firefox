@@ -2,6 +2,9 @@
 # push 前自动跑本地质量门禁。跳过：git push --no-verify。
 # 一次性启用（克隆后执行一次）：git config core.hooksPath .githooks
 
-if [ -f scripts/verify.sh ]; then
+if [ -f scripts/verify.mjs ]; then
+  node scripts/verify.mjs
+elif [ -f scripts/verify.sh ]; then
+  # 兼容没有 Node 的旧开发环境；正常入口是上面的跨平台脚本。
   sh scripts/verify.sh
 fi

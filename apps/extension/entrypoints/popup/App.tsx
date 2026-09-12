@@ -33,6 +33,7 @@ import {
   AppIcon,
   asPageMarkedList,
   getChromeSidePanel,
+  getFirefoxSidebarAction,
   type PageMarkedItem,
 } from './views/shared';
 
@@ -236,7 +237,8 @@ export default function App() {
   });
 
   const sidePanelApi = getChromeSidePanel();
-  const canOpenSidePanel = Boolean(sidePanelApi?.open);
+  const firefoxSidebarAction = getFirefoxSidebarAction();
+  const canOpenSidePanel = Boolean(sidePanelApi?.open || firefoxSidebarAction?.open);
 
   useEffect(() => {
     const syncMode = () => {
@@ -259,6 +261,18 @@ export default function App() {
   // 弹窗 → 侧边栏。Chrome 152 实测：setOptions 不支持 windowId（同步 TypeError，
   // 会拦死后续代码），只允许全局 {enabled, path}；setOptions 独立捕获，绝不让它拦住 open
   const handleOpenSidePanel = async () => {
+    // Firefox 要求 sidebarAction.open() 直接处于用户手势调用链中，
+    // 不能像 Chrome 一样先 await tabs.query()。
+    if (firefoxSidebarAction?.open) {
+      try {
+        await firefoxSidebarAction.open();
+        window.close();
+      } catch (err) {
+        notify(`${t.sidePanelOpenFailed}：${err instanceof Error ? err.message : String(err)}`);
+      }
+      return;
+    }
+
     const api = getChromeSidePanel();
     if (!api?.open) return;
     try {

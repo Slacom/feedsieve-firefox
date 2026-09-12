@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { contributeKeywordPhrases } from './contribute';
+import { contributeKeywordPhrases, getContributionStats, rescueHandle } from './contribute';
 
 let storage: Record<string, unknown>;
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -61,6 +61,59 @@ describe('关键词短语贡献', () => {
   it('autoContribute 关闭 = 不参与社区：零网络请求', async () => {
     storage.communitySettings = { enabled: true, strength: 'standard', autoContribute: false };
     expect(await contributeKeywordPhrases(['同城上门'])).toEqual({ status: 'community_disabled' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('Firefox 未授予可选数据同意时不上传短语', async () => {
+    vi.stubGlobal('browser', {
+      storage: {
+        local: {
+          get: vi.fn(async (key: string) => ({ [key]: storage[key] })),
+          set: vi.fn(async (patch: Record<string, unknown>) => Object.assign(storage, patch)),
+        },
+      },
+      permissions: {
+        getAll: vi.fn().mockResolvedValue({ data_collection: [] }),
+        request: vi.fn(),
+      },
+      runtime: {
+        getManifest: () => ({
+          version: '0.8.0',
+          browser_specific_settings: {
+            gecko: { data_collection_permissions: { required: ['none'] } },
+          },
+        }),
+      },
+    });
+
+    expect(await contributeKeywordPhrases(['同城上门'])).toEqual({ status: 'consent_required' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('Firefox 未授予可选数据同意时也不查询统计或上报抢救票', async () => {
+    vi.stubGlobal('browser', {
+      storage: {
+        local: {
+          get: vi.fn(async (key: string) => ({ [key]: storage[key] })),
+          set: vi.fn(async (patch: Record<string, unknown>) => Object.assign(storage, patch)),
+        },
+      },
+      permissions: {
+        getAll: vi.fn().mockResolvedValue({ data_collection: [] }),
+        request: vi.fn(),
+      },
+      runtime: {
+        getManifest: () => ({
+          version: '0.8.0',
+          browser_specific_settings: {
+            gecko: { data_collection_permissions: { required: ['none'] } },
+          },
+        }),
+      },
+    });
+
+    await expect(getContributionStats()).resolves.toBeNull();
+    await expect(rescueHandle('account')).resolves.toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

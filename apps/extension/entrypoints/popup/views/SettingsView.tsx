@@ -30,6 +30,10 @@ import {
   setSafetyBudgetOverride,
 } from '../../../src/lib/queue/block-safety';
 import { setUiLanguage, UI_COPY, type UiLanguage } from '../../../src/lib/platform/i18n';
+import {
+  hasFirefoxDataCollectionConsent,
+  requestFirefoxDataCollectionConsent,
+} from '../../../src/lib/platform/firefox-data-consent';
 import { HelpIcon, STRENGTH_LABELS, STRENGTH_HINTS } from './shared';
 
 interface PersonalConfigPreviewState {
@@ -70,6 +74,9 @@ export default function SettingsView({
   const [personalConfigMessage, setPersonalConfigMessage] = useState<string | null>(null);
   const [personalConfigError, setPersonalConfigError] = useState<string | null>(null);
   const [personalConfigBusy, setPersonalConfigBusy] = useState(false);
+  // Unknown consent is rendered as local-only until the asynchronous Firefox
+  // permission read completes; this prevents a pre-read upload-state flicker.
+  const [dataConsentGranted, setDataConsentGranted] = useState<boolean | null>(null);
   // 用户自定日预算：null = 还没从 storage 读到；'' 允许临时输入态，失焦校验
   const [budgetDraft, setBudgetDraft] = useState<string | null>(null);
 
@@ -86,6 +93,10 @@ export default function SettingsView({
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
 
+  useEffect(() => {
+    void hasFirefoxDataCollectionConsent().then(setDataConsentGranted);
+  }, []);
+
   async function selectLanguage(next: UiLanguage): Promise<void> {
     if (next === language) return;
     notify(null);
@@ -94,10 +105,21 @@ export default function SettingsView({
   }
 
   async function setLocalOnly(localOnly: boolean): Promise<void> {
-    await onUpdateCommunity({ autoContribute: !localOnly });
-    if (!localOnly) {
-      await browser.runtime.sendMessage({ type: 'feedsieve:labels-sync' }).catch(() => undefined);
+    if (localOnly) {
+      await onUpdateCommunity({ autoContribute: false });
+      return;
     }
+    // Firefox requires permissions.request() to be called from the user
+    // activation handler, so request consent before any awaited update.
+    const granted = await requestFirefoxDataCollectionConsent();
+    setDataConsentGranted(granted);
+    if (!granted) {
+      await onUpdateCommunity({ autoContribute: false });
+      notify(t.dataConsentRequired);
+      return;
+    }
+    await onUpdateCommunity({ autoContribute: true });
+    await browser.runtime.sendMessage({ type: 'feedsieve:labels-sync' }).catch(() => undefined);
   }
 
   /**
@@ -335,7 +357,7 @@ export default function SettingsView({
               <span className="toggle-switch">
                 <input
                   type="checkbox"
-                  checked={!community.autoContribute}
+                  checked={!community.autoContribute || dataConsentGranted !== true}
                   onChange={(event) => void setLocalOnly(event.target.checked)}
                 />
                 <span aria-hidden="true" />

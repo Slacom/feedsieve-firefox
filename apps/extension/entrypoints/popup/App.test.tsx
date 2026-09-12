@@ -425,6 +425,105 @@ describe('popup App 渲染冒烟', () => {
     });
   });
 
+  it('在 Firefox 中启用名单上传前先请求数据同意', async () => {
+    const permissionRequest = vi.fn().mockResolvedValue(false);
+    vi.stubGlobal('browser', {
+      storage: {
+        local: {
+          remove: vi.fn(),
+          get: vi.fn().mockResolvedValue({
+            uiLanguage: 'zh',
+            communitySettings: { enabled: true, strength: 'standard', autoContribute: false },
+          }),
+          set: storageSet,
+        },
+        onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+      },
+      tabs: {
+        query: vi.fn().mockResolvedValue([{ id: 1, active: true, url: 'https://x.com/home' }]),
+        sendMessage: tabSendMessage,
+      },
+      permissions: {
+        getAll: vi.fn().mockResolvedValue({ data_collection: [] }),
+        request: permissionRequest,
+      },
+      runtime: {
+        getManifest: () => ({
+          browser_specific_settings: {
+            gecko: { data_collection_permissions: { required: ['none'] } },
+          },
+        }),
+        onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
+        sendMessage: runtimeSendMessage,
+      },
+    });
+
+    const rootEl = renderApp();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await act(async () => buttonWithText(rootEl, '我的').click());
+    await act(async () => rootEl.querySelector<HTMLButtonElement>('.me-settings-entry')?.click());
+    const row = [...rootEl.querySelectorAll<HTMLLabelElement>('label.setting-row')].find(
+      (candidate) => candidate.textContent?.includes('仅本地运行'),
+    );
+    const input = row?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(input?.checked).toBe(true);
+
+    await act(async () => {
+      input?.click();
+      await Promise.resolve();
+    });
+
+    expect(permissionRequest).toHaveBeenCalledWith({ data_collection: expect.any(Array) });
+    expect(storageSet).toHaveBeenCalledWith({
+      communitySettings: expect.objectContaining({ autoContribute: false }),
+    });
+    expect(rootEl.textContent).toContain('Firefox 未获得社区数据上传同意');
+  });
+
+  it('Firefox 撤销数据同意后，即使保存过上传偏好也显示仅本地状态', async () => {
+    vi.stubGlobal('browser', {
+      storage: {
+        local: {
+          remove: vi.fn(),
+          get: vi.fn().mockResolvedValue({
+            uiLanguage: 'zh',
+            communitySettings: { enabled: true, strength: 'standard', autoContribute: true },
+          }),
+          set: storageSet,
+        },
+        onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+      },
+      tabs: {
+        query: vi.fn().mockResolvedValue([{ id: 1, active: true, url: 'https://x.com/home' }]),
+        sendMessage: tabSendMessage,
+      },
+      permissions: {
+        getAll: vi.fn().mockResolvedValue({ data_collection: [] }),
+        request: vi.fn(),
+      },
+      runtime: {
+        getManifest: () => ({
+          browser_specific_settings: {
+            gecko: { data_collection_permissions: { required: ['none'] } },
+          },
+        }),
+        onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
+        sendMessage: runtimeSendMessage,
+      },
+    });
+
+    const rootEl = renderApp();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await act(async () => buttonWithText(rootEl, '我的').click());
+    await act(async () => rootEl.querySelector<HTMLButtonElement>('.me-settings-entry')?.click());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const row = [...rootEl.querySelectorAll<HTMLLabelElement>('label.setting-row')].find(
+      (candidate) => candidate.textContent?.includes('仅本地运行'),
+    );
+    expect(row?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true);
+  });
+
   it('previews a personal config before applying only local preference storage', async () => {
     const rootEl = renderApp();
     await new Promise((r) => setTimeout(r, 150));
@@ -464,8 +563,8 @@ describe('popup App 渲染冒烟', () => {
       expect.objectContaining({ communitySettings: expect.anything() }),
     );
     expect(storageSet).toHaveBeenCalledWith({ uiLanguage: 'zh' });
-    // 设置页多出的第 4 次写入是安装 ID 引导写入（getInstallationId 引导生成），与个人配置无关
-    expect(storageSet.mock.calls.filter(([value]) => 'installationId' in value).length).toBe(1);
+    // 打开「我的」页不再惰性生成安装 ID；只有明确贡献或认领档案才会建档
+    expect(storageSet.mock.calls.filter(([value]) => 'installationId' in value).length).toBe(0);
     expect(runtimeSendMessage).toHaveBeenCalledTimes(initialRuntimeCalls);
     expect(tabSendMessage).toHaveBeenCalledTimes(initialTabCalls);
     expect(rootEl.textContent).toContain('仅本地设置已更新');
@@ -495,7 +594,7 @@ describe('popup App 渲染冒烟', () => {
       expect.objectContaining({ communitySettings: expect.anything() }),
     );
     expect(storageSet).toHaveBeenCalledWith({ uiLanguage: 'zh' });
-    expect(storageSet.mock.calls.filter(([value]) => 'installationId' in value).length).toBe(1);
+    expect(storageSet.mock.calls.filter(([value]) => 'installationId' in value).length).toBe(0);
     expect(rootEl.textContent).toContain('仅本地设置已更新');
   });
 
@@ -944,5 +1043,37 @@ describe('popup App 渲染冒烟', () => {
     );
     expect(blockCalls.length).toBe(1);
     expect((blockCalls[0]?.[1] as { handles: string[] } | undefined)?.handles).toEqual(['spam_queen']);
+  });
+
+  it('在 Firefox 中从弹窗直接打开原生侧栏', async () => {
+    const sidebarOpen = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('browser', {
+      storage: {
+        local: {
+          remove: vi.fn(),
+          get: vi.fn().mockResolvedValue({ uiLanguage: 'zh' }),
+          set: vi.fn().mockResolvedValue(undefined),
+        },
+        onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+      },
+      tabs: {
+        query: vi.fn().mockResolvedValue([{ id: 1, active: true, url: 'https://x.com/home' }]),
+        sendMessage: tabSendMessage,
+      },
+      sidebarAction: { open: sidebarOpen },
+      runtime: { onMessage: { addListener: vi.fn(), removeListener: vi.fn() }, sendMessage: runtimeSendMessage },
+    });
+
+    const rootEl = renderApp();
+    await waitForCondition(() => rootEl.querySelector('.sidepanel-toggle-btn') !== null);
+
+    const openButton = rootEl.querySelector<HTMLButtonElement>('.sidepanel-toggle-btn');
+    expect(openButton).not.toBeNull();
+    await act(async () => {
+      openButton?.click();
+    });
+
+    expect(sidebarOpen).toHaveBeenCalledTimes(1);
+    expect(sidebarOpen).toHaveBeenCalledWith();
   });
 });

@@ -56,7 +56,7 @@ FeedSieve 解决问题的最佳姿势，是直接作用于用户已登录的 `x.
 - 用户不需要换 X 客户端，不需要复制链接到另一个 App
 - X 原生 Block 通过页面菜单即可完成，不需要 X API / OAuth
 - 安装成本低，适合开源传播
-- 可以先支持 Chrome / Edge，再扩展到 Firefox / Safari
+- 同一套核心可以分别输出 Chrome / Edge 与 Firefox 构建；Safari 不在当前 fork 范围内
 
 ## 真正的技术本体
 

@@ -1282,7 +1282,7 @@ v0.1 不需要后端。
 
 必须做到：
 
-- Chrome / Edge 可安装
+- Chrome / Edge / Firefox 可安装
 - X Home + Replies + Search 基础可工作
 - 不明显拖慢滚动
 - 黄框标注（内置名单 + 启发式，带理由）

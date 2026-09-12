@@ -63,7 +63,8 @@
 | --- | --- |
 | **Chrome 应用商店（推荐）** | 前往[商店页面](https://chromewebstore.google.com/detail/feedsieve/amhdjglnonjaoenddnifpnljgmocfdph)点「添加至 Chrome」，自动接收更新 |
 | **GitHub Releases** | 从 [Releases](https://github.com/realchendahuang/feedsieve/releases) 下载 `feedsieve-*-chrome.zip` 并解压 → 打开 `chrome://extensions` 开启「开发者模式」→「加载已解压的扩展程序」 |
-| **从源码构建** | `git clone https://github.com/realchendahuang/feedsieve.git && pnpm install && pnpm build:extension`，然后加载 `apps/extension/.output/chrome-mv3`（需要 Node ≥ 22 与 pnpm） |
+| **从源码构建** | 在本仓库目录运行 `pnpm install && pnpm build:extension`，然后加载 `apps/extension/.output/chrome-mv3`（需要 Node ≥ 22 与 pnpm） |
+| **Firefox 独立 fork** | `pnpm install && pnpm build:firefox`，然后在 `about:debugging#/runtime/this-firefox` 临时载入 `apps/extension/.output/firefox-mv3/manifest.json`；完整说明见 [`docs/FIREFOX.md`](docs/FIREFOX.md) |
 
 **Edge / Brave 等 Chromium 浏览器可直接装商店版**：Edge 打开商店页面时会提示「允许来自其他商店的扩展」，允许后点「添加至 Chrome」即可，无需单独上架 Edge Add-ons（也不用后两种方式）。
 
@@ -180,6 +181,8 @@ PR 与 push 由 GitHub Actions 验证（`.github/workflows/verify.yml`：lint / 
 ```sh
 pnpm verify                 # lint + 词库校验 + typecheck + 全部测试 + 扩展构建
 pnpm build:extension        # 构建扩展，产物在 apps/extension/.output/chrome-mv3
+pnpm build:firefox          # 构建 Firefox Manifest V3，产物在 apps/extension/.output/firefox-mv3
+pnpm pack:firefox           # 构建、审计并生成 Firefox ZIP + SHA-256
 pnpm keyword-packs:build    # 由公开词库源构建官方词库 JSON
 ```
 

@@ -17,6 +17,7 @@ import {
 } from '@feedsieve/community-lists';
 import bundledSnapshotJson from '../../../../../community/lists/official.json';
 import { API_BASE } from '../platform/api-base';
+import { supportsFirefoxDataCollectionConsent } from '../platform/firefox-data-consent';
 
 export const COMMUNITY_API_BASE = API_BASE;
 
@@ -139,10 +140,18 @@ export const snapshotStore = {
 export async function getCommunitySettings(): Promise<CommunitySettings> {
   const result = await browser.storage.local.get(SETTINGS_KEY);
   const value = (result[SETTINGS_KEY] ?? {}) as Record<string, unknown>;
+  const hasStoredContributionPreference = Object.prototype.hasOwnProperty.call(
+    value,
+    'autoContribute',
+  );
   return {
     enabled: value['enabled'] !== false,
     strength: isMarkStrength(value['strength']) ? value['strength'] : DEFAULT_MARK_STRENGTH,
-    autoContribute: value['autoContribute'] !== false,
+    // Firefox optional data consent is not granted by default. New Firefox
+    // installs therefore start local-only until the user explicitly opts in.
+    autoContribute: hasStoredContributionPreference
+      ? value['autoContribute'] !== false
+      : !supportsFirefoxDataCollectionConsent(),
   };
 }
 
