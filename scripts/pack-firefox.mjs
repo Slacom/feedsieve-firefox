@@ -2,9 +2,10 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { auditZipArchive } from './firefox-package-audit.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const extensionOutput = path.join(root, 'apps', 'extension', '.output');
@@ -50,6 +51,20 @@ if (
 
 const zipName = `feedsieve-${manifest.version}-firefox.zip`;
 const zipPath = path.join(extensionOutput, zipName);
+const sourcesZipName = `feedsieve-${manifest.version}-sources.zip`;
+const sourcesZipPath = path.join(extensionOutput, sourcesZipName);
+if (!existsSync(zipPath)) fail(`Firefox ZIP is missing: ${zipName}`);
+if (!existsSync(sourcesZipPath)) fail(`sources ZIP is missing: ${sourcesZipName}`);
+
+try {
+  const runtimeEntries = auditZipArchive(zipPath, manifest);
+  const sourceEntries = auditZipArchive(sourcesZipPath);
+  console.log(`Firefox archive audited: ${zipName} (${runtimeEntries.length} files)`);
+  console.log(`Firefox sources archive audited: ${sourcesZipName} (${sourceEntries.length} files)`);
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error));
+}
+
 const checksum = createHash('sha256').update(readFileSync(zipPath)).digest('hex');
 const checksumPath = `${zipPath}.sha256`;
 writeFileSync(checksumPath, `${checksum}  ${zipName}\n`);

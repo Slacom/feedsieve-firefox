@@ -68,6 +68,8 @@
 
 **Edge / Brave 等 Chromium 浏览器可直接装商店版**：Edge 打开商店页面时会提示「允许来自其他商店的扩展」，允许后点「添加至 Chrome」即可，无需单独上架 Edge Add-ons（也不用后两种方式）。
 
+> Firefox fork 发布声明：本适配由 Codex 协助完成，尚未经过完整 Firefox 实机、X 登录态、长期运行和 AMO 审核验证。
+
 ## 使用教程
 
 分步教程（含打野排位、设置项逐条、常见问题）见 [docs/USAGE.md](docs/USAGE.md)，或读[网页版教程](https://feedsieve.win/guide)。核心就四步：

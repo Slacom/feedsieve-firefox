@@ -2,6 +2,8 @@
 
 本仓库基于 [realchendahuang/feedsieve](https://github.com/realchendahuang/feedsieve) 的公开代码，保留检测器、X 页面适配、持久化拉黑队列和 React 工作区，并加入 Firefox 专用构建目标。
 
+> 发布声明：本 Firefox 适配由 Codex 协助完成。当前版本已完成本地静态检查、自动化测试和构建审计，但尚未经过完整 Firefox 实机、X 登录态、长期运行和 AMO 审核验证。
+
 Firefox 构建使用 Manifest V3、`sidebar_action` 和 Firefox 的后台脚本兼容路径；Chrome 构建仍可用，两个目标共用业务逻辑。
 
 ## 本地构建
