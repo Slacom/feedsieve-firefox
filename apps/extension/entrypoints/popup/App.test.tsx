@@ -38,6 +38,7 @@ beforeEach(() => {
       sendMessage: tabSendMessage,
     },
     runtime: {
+      getManifest: () => ({}),
       onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
       sendMessage: runtimeSendMessage,
     },

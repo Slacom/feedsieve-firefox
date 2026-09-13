@@ -1,7 +1,7 @@
+import { Buffer } from 'node:buffer';
 import { readFileSync } from 'node:fs';
 import { inflateRawSync } from 'node:zlib';
 
-const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const LOCAL_FILE_SIGNATURE = 0x04034b50;
 const EOCD_MIN_LENGTH = 22;
