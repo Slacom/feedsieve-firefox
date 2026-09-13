@@ -23,6 +23,25 @@ describe('Firefox data collection consent', () => {
     await expect(requestFirefoxDataCollectionConsent()).resolves.toBe(true);
   });
 
+  it('fails closed when the browser identity cannot be determined', async () => {
+    const getManifest = vi.fn(() => {
+      throw new Error('manifest unavailable');
+    });
+    const request = vi.fn().mockResolvedValue(true);
+    vi.stubGlobal('browser', {
+      runtime: { getManifest },
+      permissions: {
+        getAll: vi.fn().mockResolvedValue({ data_collection: [...FIREFOX_DATA_COLLECTION_TYPES] }),
+        request,
+      },
+    });
+
+    expect(supportsFirefoxDataCollectionConsent()).toBe(true);
+    await expect(hasFirefoxDataCollectionConsent()).resolves.toBe(false);
+    await expect(requestFirefoxDataCollectionConsent()).resolves.toBe(false);
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('fails closed when the Firefox runtime omits the data_collection key', async () => {
     const getAll = vi.fn().mockResolvedValue({ permissions: ['storage'] });
     const request = vi.fn();
