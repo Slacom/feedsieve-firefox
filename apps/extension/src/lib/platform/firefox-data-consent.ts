@@ -20,33 +20,39 @@ interface FirefoxPermissionsApi {
   request?: (details: { data_collection: FirefoxDataCollectionType[] }) => Promise<boolean>;
 }
 
-function isFirefoxBuild(): boolean {
-  if (typeof globalThis === 'undefined') return false;
-  const runtime = (
-    globalThis as unknown as {
-      browser?: {
-        runtime?: {
-          getManifest?: () => unknown;
-        };
+type BrowserIdentity = 'firefox' | 'other' | 'unknown';
+
+function browserIdentity(): BrowserIdentity {
+  if (typeof globalThis === 'undefined') return 'other';
+  const browserApi = (globalThis as unknown as {
+    browser?: {
+      runtime?: {
+        getManifest?: () => unknown;
       };
-    }
-  ).browser?.runtime;
+    };
+  }).browser;
+  if (!browserApi) return 'other';
+  const runtime = browserApi.runtime;
+  if (typeof runtime?.getManifest !== 'function') return 'unknown';
   try {
-    const manifest = runtime?.getManifest?.() as
+    const manifest = runtime.getManifest() as
       | {
           browser_specific_settings?: {
             gecko?: { data_collection_permissions?: unknown };
           };
         }
       | undefined;
-    return manifest?.browser_specific_settings?.gecko?.data_collection_permissions !== undefined;
+    if (!manifest || typeof manifest !== 'object') return 'unknown';
+    return manifest.browser_specific_settings?.gecko?.data_collection_permissions !== undefined
+      ? 'firefox'
+      : 'other';
   } catch {
-    return false;
+    return 'unknown';
   }
 }
 
 function getFirefoxPermissionsApi(): FirefoxPermissionsApi | undefined {
-  if (!isFirefoxBuild() || typeof globalThis === 'undefined') return undefined;
+  if (browserIdentity() !== 'firefox' || typeof globalThis === 'undefined') return undefined;
   const permissions = (
     globalThis as unknown as {
       browser?: { permissions?: Partial<FirefoxPermissionsApi> };
@@ -74,9 +80,10 @@ function grantsAllDeclaredCategories(value: PermissionSnapshot): boolean {
 
 /** True when the current Firefox build exposes the optional consent surface. */
 export function supportsFirefoxDataCollectionConsent(): boolean {
-  // Use the manifest marker rather than only API presence so a Firefox
-  // permission API failure still defaults the UI to local-only mode.
-  return isFirefoxBuild();
+  // Unknown browser identity must be treated like Firefox here so a failed
+  // runtime probe defaults the UI to local-only mode instead of allowing an
+  // upload before consent can be established.
+  return browserIdentity() !== 'other';
 }
 
 /**
@@ -86,7 +93,9 @@ export function supportsFirefoxDataCollectionConsent(): boolean {
  * state as permission to transmit.
  */
 export async function hasFirefoxDataCollectionConsent(): Promise<boolean> {
-  if (!isFirefoxBuild()) return true;
+  const identity = browserIdentity();
+  if (identity === 'other') return true;
+  if (identity === 'unknown') return false;
   const api = getFirefoxPermissionsApi();
   if (!api) return false;
   try {
@@ -105,7 +114,9 @@ export async function hasFirefoxDataCollectionConsent(): Promise<boolean> {
  * requires permissions.request() to remain in that activation chain.
  */
 export async function requestFirefoxDataCollectionConsent(): Promise<boolean> {
-  if (!isFirefoxBuild()) return true;
+  const identity = browserIdentity();
+  if (identity === 'other') return true;
+  if (identity === 'unknown') return false;
   const api = getFirefoxPermissionsApi();
   if (!api?.request) return false;
   try {
