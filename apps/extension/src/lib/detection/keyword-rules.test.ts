@@ -4,12 +4,24 @@ import {
   activeKeywordRules,
   addCustomKeywordRule,
   createKeywordHeuristics,
+  DEFAULT_KEYWORD_RULE_SETTINGS,
   getKeywordRuleSettings,
+  isValidPhrase,
   isOfficialKeywordCategorySubscribed,
-  OFFICIAL_KEYWORD_RULES,
   setOfficialKeywordCategorySubscribed,
   setOfficialKeywordRuleEnabled,
+  type KeywordRuleSettings,
 } from './keyword-rules';
+import { BUNDLED_KEYWORD_PACK_CATALOG } from './keyword-packs';
+
+/** 全量官方规则数（从随包目录直接算，测试里 Node 态已同步装入） */
+const OFFICIAL_RULE_COUNT = BUNDLED_KEYWORD_PACK_CATALOG.packs.reduce(
+  (count, pack) => count + pack.rules.length,
+  0,
+) as number;
+const ADULT_OFFICIAL_RULE_COUNT = (BUNDLED_KEYWORD_PACK_CATALOG.packs.find(
+  (pack) => pack.id === 'adult_gray_traffic',
+)?.rules.length ?? 0) as number;
 
 let storage: Record<string, unknown>;
 
@@ -35,18 +47,15 @@ describe('本地关键词规则', () => {
     expect(
       rule?.check({ handle: 'bait', text: '应该没人比我玩的开了吧 🤚 😊 我福不黑不信你看' }),
     ).toContain('我福不黑');
-    expect(activeKeywordRules(settings)).toHaveLength(
-      OFFICIAL_KEYWORD_RULES.filter((rule) => rule.category === 'adult_gray_traffic').length,
-    );
+    expect(activeKeywordRules(settings)).toHaveLength(OFFICIAL_RULE_COUNT);
   });
 
-  it('首次安装默认只订阅黄推 / 成人引流，订阅不在词库的旧分类是宽容空操作', async () => {
+  it('首次安装默认订阅黄推 + crypto 假抽奖两个默认包，旧分类是宽容空操作', async () => {
     let settings = await getKeywordRuleSettings();
     expect(isOfficialKeywordCategorySubscribed(settings, 'adult_gray_traffic')).toBe(true);
+    expect(isOfficialKeywordCategorySubscribed(settings, 'crypto_giveaway_scams')).toBe(true);
     expect(isOfficialKeywordCategorySubscribed(settings, 'crypto_scam')).toBe(false);
-    expect(activeKeywordRules(settings)).toHaveLength(
-      OFFICIAL_KEYWORD_RULES.filter((rule) => rule.category === 'adult_gray_traffic').length,
-    );
+    expect(activeKeywordRules(settings)).toHaveLength(OFFICIAL_RULE_COUNT);
 
     // 2026-09-11 起词库只保留黄推包；老版本备份把 crypto_scam 标成订阅时，
     // 该分类没有任何官方规则，不产出条目也不报错（迁移兼容面）
@@ -57,14 +66,26 @@ describe('本地关键词规则', () => {
     );
   });
 
-  it('旧版订阅状态升级时迁移为仅黄推默认', async () => {
+  it('旧版订阅状态升级时迁移为默认订阅（v4 起含 crypto 假抽奖包）', async () => {
     storage.keywordRulesV1 = {
       subscribedCategoryIds: ['adult_gray_traffic', 'crypto_scam'],
       disabledOfficialRuleIds: [],
       customRules: [],
     };
     const settings = await getKeywordRuleSettings();
-    expect(settings.subscribedCategoryIds).toEqual(['adult_gray_traffic']);
+    // 无迁移标记的存量（v0.7.6 前）一律套最新默认；crypto_scam 不在词库被滤掉
+    expect(settings.subscribedCategoryIds).toEqual(['adult_gray_traffic', 'crypto_giveaway_scams']);
+  });
+
+  it('v3 存量升级：保留明确订阅并合并 crypto 新默认包（v0.7.6 语义不变）', async () => {
+    storage.keywordRulesV1 = {
+      subscriptionDefaultsVersion: 3,
+      subscribedCategoryIds: ['adult_gray_traffic'],
+      disabledOfficialRuleIds: [],
+      customRules: [],
+    };
+    const settings = await getKeywordRuleSettings();
+    expect(settings.subscribedCategoryIds).toEqual(['adult_gray_traffic', 'crypto_giveaway_scams']);
   });
 
   it('新版用户明确关闭全部词库后，空订阅不会被重新打开', async () => {
@@ -106,9 +127,7 @@ describe('本地关键词规则', () => {
     settings = await getKeywordRuleSettings();
     expect(
       activeKeywordRules(settings).filter((rule) => rule.category === 'adult_gray_traffic'),
-    ).toHaveLength(
-      OFFICIAL_KEYWORD_RULES.filter((rule) => rule.category === 'adult_gray_traffic').length,
-    );
+    ).toHaveLength(ADULT_OFFICIAL_RULE_COUNT);
   });
 
   it('分词组合规则命中完整短语，而不会把普通“内部群”讨论误标', async () => {
@@ -120,9 +139,9 @@ describe('本地关键词规则', () => {
     // 成人包的分词组合示例（同城 + 上门），替代已移除的反诈包规则
     const comboRule = rules.find((rule) => rule.id === 'keyword:official:adult-terms-local-door');
 
-    expect(comboRule?.check({ handle: 'bait', text: '同城有派对，秒到车上即可安排上门' })).toContain(
-      '同城',
-    );
+    expect(
+      comboRule?.check({ handle: 'bait', text: '同城有派对，秒到车上即可安排上门' }),
+    ).toContain('同城');
     // 分词顺序/gap 之外：正常生活讨论既不命中该组合，也不命中其它官方规则
     expect(
       rules.some((rule) => rule.check({ handle: 'team', text: '我们部门的内部群今晚开会' })),
@@ -139,6 +158,27 @@ describe('本地关键词规则', () => {
       '命中你的关键词',
     );
     expect(rule?.check({ handle: 'normal', text: '这是普通讨论' })).toBeNull();
+  });
+
+  it('拒绝归一化后为空的纯标点/符号自定义词，避免所有文本都被误标', () => {
+    expect(isValidPhrase('...')).toBe(false);
+    expect(isValidPhrase('🔥')).toBe(false);
+    expect(isValidPhrase('同城🔥')).toBe(true);
+  });
+
+  it('批量索引保留重叠短语，不会因较短词先出现而漏掉较长规则', () => {
+    const settings: KeywordRuleSettings = {
+      ...DEFAULT_KEYWORD_RULE_SETTINGS,
+      subscribedCategoryIds: [],
+      customRules: [
+        { id: 'short', phrase: '同城上门', createdAt: 1 },
+        { id: 'long', phrase: '同城上门可约', createdAt: 2 },
+      ],
+    };
+    const rules = createKeywordHeuristics(settings);
+    const input = { handle: 'bait', text: '今晚同城上门可约' };
+    expect(rules[0]?.check(input)).toContain('同城上门');
+    expect(rules[1]?.check(input)).toContain('同城上门可约');
   });
 
   it('英文短语按整词命中：bio 里的 Adulthood 不误标 adult，正文广告仍命中（issue #4）', async () => {
@@ -179,6 +219,9 @@ describe('本地关键词规则', () => {
     expect(rule?.check({ handle: 'bait', text: '同城今天可以安排上门' })).toContain('同城 + 上门');
     expect(rule?.check({ handle: 'bait', text: '同·城🔥可上门' })).toContain('同城 + 上门');
     expect(rule?.check({ handle: 'bait', text: '同城上跟上门' })).toContain('同城 + 上门');
+    expect(rule?.check({ handle: 'bait', text: `同城${'甲'.repeat(13)}同城上门` })).toContain(
+      '同城 + 上门',
+    );
     expect(rule?.check({ handle: 'normal', text: '上门服务就在同城' })).toBeNull();
     expect(rule?.check({ handle: 'normal', text: '同城生活资讯' })).toBeNull();
   });
@@ -189,5 +232,50 @@ describe('本地关键词规则', () => {
       (candidate) => candidate.id === 'keyword:official:adult-fu-not-black',
     );
     expect(rule?.check({ handle: 'bait', text: '我·福 🔥 不 黑，不信你看' })).toContain('我福不黑');
+  });
+
+  it('字间拆入不可见格式字符（U+2060 词连接符等）仍命中（真机样本）', async () => {
+    const settings = await getKeywordRuleSettings();
+    const rule = createKeywordHeuristics(settings).find(
+      (candidate) => candidate.id === 'keyword:official:adult-fu-not-black',
+    );
+    expect(rule).toBeDefined();
+    const sample = [
+      '应没没人比我玩的开了吧🍀🙉',
+      '我\u2060\u200C\u200D福\u200C\u2060不\u2060黑\u200D不信\u200C你看',
+    ].join('');
+    expect(rule?.check({ handle: 'bait', text: sample })).toContain('我福不黑');
+  });
+
+  it('变体矩阵：不可见附加符/填充符/繁体/部首/同形异源字均可命中', async () => {
+    const settings = await getKeywordRuleSettings();
+    const heuristics = createKeywordHeuristics(settings);
+    const fuRule = heuristics.find(
+      (candidate) => candidate.id === 'keyword:official:adult-fu-not-black',
+    );
+    const cityRule = heuristics.find((candidate) =>
+      candidate.id.includes('adult-terms-local-door'),
+    );
+
+    // Zalgo 组合附加符（Mn 类，NFKC 消不掉）
+    expect(fuRule?.check({ handle: 'bait', text: '我\u0301\u0316福不黑不信你看' })).toContain(
+      '我福不黑',
+    );
+    // 韩文填充符（U+3164/115F/1160，Lo 类空白）
+    expect(fuRule?.check({ handle: 'bait', text: '我\u3164福\u115F不黑不信你看' })).toContain(
+      '我福不黑',
+    );
+    // 繁体写法：官方简体词条要能在繁体样本上命中（opencc 映射）
+    expect(
+      fuRule?.check({ handle: 'bait', text: '同城裏面誰都不信，快看我福不黑不信你看' }),
+    ).toContain('我福不黑');
+    expect(cityRule?.check({ handle: 'bait', text: '同城上門服務' })).toContain('同城 + 上门');
+    // CJK 补充部首替字（⻔→门 等，CJKRadicals.txt 映射）
+    expect(cityRule?.check({ handle: 'bait', text: '同城上\u2ED4服務' })).toContain('同城 + 上门');
+    // 同形异源字（confusables 映射：西里尔 а）
+    const adultRule = heuristics.find(
+      (candidate) => candidate.id === 'keyword:official:adult-gray-traffic-7fdc3e8038e87ff5',
+    );
+    expect(adultRule?.check({ handle: 'bait', text: '\u0430dult 看过来' })).toContain('adult');
   });
 });

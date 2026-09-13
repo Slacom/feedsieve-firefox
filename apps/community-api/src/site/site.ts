@@ -1,7 +1,6 @@
 // 站点级常量：品牌名、站点 URL（多页面共用，避免 URL 漂移）
 export const SITE_NAME = '福滤娃 FeedSieve';
 export const SITE_URL = 'https://feedsieve.win';
-export const SLOGAN = '高置信垃圾账号黄框标注，一键原生拉黑，全端同步消失。';
 
 /** GitHub 开源仓库（页脚/安装入口链接） */
 export const GITHUB_URL = 'https://github.com/realchendahuang/feedsieve';
@@ -14,3 +13,7 @@ export const CHROME_STORE_URL =
 export function xProfileUrl(handle: string): string {
   return `https://x.com/${encodeURIComponent(handle)}`;
 }
+
+/** 推荐白名单入册申请（GitHub Issue 表单，维护者手动拉取后入册） */
+export const WHITELIST_ISSUE_URL =
+  `${GITHUB_URL}/issues/new?template=whitelist-request.yml`;

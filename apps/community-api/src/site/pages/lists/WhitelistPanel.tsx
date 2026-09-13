@@ -1,113 +1,89 @@
-import { useMemo, useState } from 'react';
-import type { RosterVerifiedEntry, RosterWhitelistEntry } from '../../../roster';
-import { HandleLink, fmtDate } from './lists-common';
+import { useState } from 'react';
+import type { RosterWhitelistEntry } from '../../../roster';
+import { fmtDate, xProfileUrl } from './lists-common';
 
 /**
- * 白名单公示面板：推荐白名单全量 + 社区抢救 50/页分页（推荐白名单全量 + 抢救分页）。
+ * 推荐白名单公示面板：KOSX MiniMemberCard 同款名片卡（横幅渐变 + 头像压边 +
+ * 昵称/@handle + 简介 line-clamp + 入册日期），社区抢救拆到 /lists/rescue。
  */
-export function WhitelistPanel({
-  maintained,
-  verified,
-}: {
-  maintained: RosterWhitelistEntry[];
-  verified: RosterVerifiedEntry[];
-}) {
+export function WhitelistPanel({ maintained }: { maintained: RosterWhitelistEntry[] }) {
+  if (maintained.length === 0) {
+    return <p className="panel-card px-4 py-10 text-center text-mist">暂无推荐白名单账号</p>;
+  }
   return (
-    <div className="space-y-10">
-      <section>
-        <PanelNote text="推荐白名单 · 一票豁免任何标注" />
-        <div className="panel-card overflow-hidden">
-          <table className="w-full text-sm" id="whitelist-table">
-            <thead>
-              <tr className="border-b border-line/70 text-left text-xs text-mist">
-                <th className="px-4 py-3 font-semibold">账号</th>
-                <th className="px-4 py-3 font-semibold">宣言 / 入册说明</th>
-                <th className="px-4 py-3 font-semibold">入册</th>
-              </tr>
-            </thead>
-            <tbody>
-              {maintained.map((entry) => (
-                <tr key={entry.handle} className="border-b border-line/40">
-                  <td className="px-4 py-2.5"><HandleLink handle={entry.handle} /></td>
-                  <td className="px-4 py-2.5" style={{ wordBreak: 'break-word' }}>{entry.note || '—'}</td>
-                  <td className="px-4 py-2.5 text-mist tabular-nums">{fmtDate(entry.added_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {maintained.length === 0 && <p className="px-4 py-10 text-center text-mist">暂无推荐白名单账号</p>}
-        </div>
-      </section>
-
-      <VerifiedTable entries={verified} />
-    </div>
-  );
-}
-
-function PanelNote({ text }: { text: string }) {
-  return <p className="mb-3 text-sm font-semibold text-mist">{text}</p>;
-}
-
-function VerifiedTable({ entries }: { entries: RosterVerifiedEntry[] }) {
-  const PAGE_SIZE = 50;
-  const [page, setPage] = useState(0);
-
-  const sorted = useMemo(() => [...entries].sort((a, b) => b.net_votes - a.net_votes), [entries]);
-  const pages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const safePage = Math.min(page, pages - 1);
-  const rows = sorted.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
-
-  return (
-    <section>
-      <PanelNote text="社区抢救 · 被验证为「误标正常」的账号" />
-      <div className="panel-card overflow-hidden">
-        <table className="w-full text-sm" id="verified-table">
-          <thead>
-            <tr className="border-b border-line/70 text-left text-xs text-mist">
-              <th className="px-4 py-3 font-semibold">账号</th>
-              <th className="px-4 py-3 text-right font-semibold">抢救</th>
-              <th className="px-4 py-3 text-right font-semibold">拉黑</th>
-              <th className="px-4 py-3 text-right font-semibold">净票</th>
-              <th className="px-4 py-3 font-semibold">更新</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((entry) => (
-              <tr key={entry.handle} className="border-b border-line/40">
-                <td className="px-4 py-2.5"><HandleLink handle={entry.handle} /></td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{entry.rescue_count}</td>
-                <td className="px-4 py-2.5 text-right tabular-nums">{entry.report_count}</td>
-                <td className="px-4 py-2.5 text-right font-bold tabular-nums">{entry.net_votes}</td>
-                <td className="px-4 py-2.5 text-mist tabular-nums">{fmtDate(entry.updated_at)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {sorted.length === 0 && <p className="px-4 py-10 text-center text-mist">暂无记录</p>}
-      </div>
-      {pages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-3 text-sm text-mist">
-          <button
-            type="button"
-            disabled={safePage <= 0}
-            onClick={() => setPage(safePage - 1)}
-            className="rounded-full border border-line px-4 py-1.5 transition-colors hover:bg-soft-surface disabled:opacity-40"
-          >
-            上一页
-          </button>
-          <span className="tabular-nums">
-            第 {safePage + 1} / {pages} 页 · {sorted.length} 条
-          </span>
-          <button
-            type="button"
-            disabled={safePage >= pages - 1}
-            onClick={() => setPage(safePage + 1)}
-            className="rounded-full border border-line px-4 py-1.5 transition-colors hover:bg-soft-surface disabled:opacity-40"
-          >
-            下一页
-          </button>
-        </div>
-      )}
+    <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {maintained.map((entry) => (
+        <WhitelistCard key={entry.handle} entry={entry} />
+      ))}
     </section>
   );
+}
+
+function WhitelistCard({ entry }: { entry: RosterWhitelistEntry }) {
+  return (
+    <a
+      href={xProfileUrl(entry.handle)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group flex h-full flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--panel-elev)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40"
+    >
+      <div className="bg-gradient-to-r from-gold/15 via-surface to-surface size-full h-14 sm:h-16" aria-hidden="true">
+        <div className="size-full bg-gradient-to-t from-surface via-surface/30 to-transparent" />
+      </div>
+      <div className="relative z-10 -mt-6 flex flex-1 flex-col px-4 pb-4">
+        <Avatar url={entry.avatar_url} name={entry.name ?? entry.handle} className="size-12 ring-4 ring-surface" />
+        <div className="mt-2 min-w-0">
+          <div className="truncate text-sm font-semibold leading-tight text-ink">{entry.name ?? `@${entry.handle}`}</div>
+          <div className="mt-0.5 truncate text-xs text-mist group-hover:text-gold">@{entry.handle}</div>
+        </div>
+        <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-mist" style={{ wordBreak: 'break-word' }}>
+          {entry.note}
+        </p>
+        <div className="mt-auto pt-2 text-[11px] text-mist tabular-nums">入册 {fmtDate(entry.added_at)}</div>
+      </div>
+    </a>
+  );
+}
+
+/**
+ * 卡片头像：默认尝试 400x400 高清变体（pbs.twimg.com 支持换后缀），404 逐级
+ * 回退 API 原图，再失败退首字母占位（KOSX Avatar 同款三档）。
+ */
+function Avatar({
+  url,
+  name,
+  className,
+}: {
+  url: string | undefined;
+  name: string;
+  className: string;
+}) {
+  const hd = url ? hdVariant(url) : null;
+  const [stage, setStage] = useState(hd && hd !== url ? 0 : 1);
+  const initial = (name.trim()[0] ?? '?').toUpperCase();
+
+  if (!url || stage >= 2) {
+    return (
+      <div
+        className={`flex items-center justify-center rounded-full bg-soft-surface font-semibold text-mist ${className}`}
+        aria-hidden="true"
+      >
+        {initial}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={stage === 0 && hd ? hd : url}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setStage((s) => s + 1)}
+      className={`rounded-full bg-soft-surface object-cover ${className}`}
+    />
+  );
+}
+
+function hdVariant(url: string): string {
+  return url.replace(/_(?:normal|bigger|mini|\d+x\d+)(\.(?:jpe?g|png|webp|gif))$/i, '_400x400$1');
 }

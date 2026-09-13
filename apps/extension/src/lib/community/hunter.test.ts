@@ -78,10 +78,10 @@ describe('hunter data consent boundary', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('removes the personal me prefix when opening the public leaderboard without consent', async () => {
-    await openLeaderboard('abcdef123456');
+  it('opens the public leaderboard without a personal me prefix', async () => {
+    await openLeaderboard();
 
-    expect(tabCreate).toHaveBeenCalledWith({ url: 'https://api.feedsieve.win/leaderboard' });
+    expect(tabCreate).toHaveBeenCalledWith({ url: 'https://feedsieve.win/lists/ranked' });
   });
 
   it('sends the installation ID only after all declared categories are granted', async () => {

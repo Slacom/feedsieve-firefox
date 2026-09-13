@@ -77,7 +77,7 @@ describe('GET /v1/roster/latest（官网名单公示）', () => {
     for (let i = 1; i <= 4; i++) await rescue(`roster-100${i}-4000-8000-bbbbbbbbbbbb`, 'rescued_user');
     // 推荐白名单（博主宣言）
     await env.DB.prepare(MAINTAINER_WHITELIST_UPSERT_SQL)
-      .bind('good_user', null, null, null, '本人宣言：不刷屏不引流', Math.floor(Date.now() / 1000))
+      .bind('good_user', null, '好用户', 'https://pbs.twimg.com/profile_images/1/ok_400x400.jpg', '本人宣言：不刷屏不引流', Math.floor(Date.now() / 1000))
       .run();
 
     await generateSnapshot(env, 0, { bypassDailyOnce: true });
@@ -89,8 +89,9 @@ describe('GET /v1/roster/latest（官网名单公示）', () => {
 
     expect(roster.snapshot_version).toMatch(/^\d{4}\.\d{2}\.\d{2}\.\d{1,4}$/);
     expect(roster.generated_at).toBeTruthy();
-    // 测试环境配置了签名私钥（与 snapshot.test.ts 同一部署面）→ 公示徽章如实展示已签名
-    expect(roster.signed).toBe(true);
+    // 本机 .dev.vars 可带测试签名密钥，CI 按设计不持有发布私钥；公示值必须
+    // 如实反映当前快照是否具备签名，不能把本机密钥误当成测试前置条件。
+    expect(roster.signed).toBe(Boolean(env.SIGNING_PRIVATE_KEY && env.SIGNING_KEY_ID));
 
     const spam = roster.blacklist.entries.find((entry) => entry.handle === 'spam_user');
     expect(spam).toMatchObject({ net_votes: 5, sources: ['community'] });
@@ -104,7 +105,11 @@ describe('GET /v1/roster/latest（官网名单公示）', () => {
     expect(detail.evidence_post_ids).toEqual(['18000000000000000']);
 
     const maintained = roster.whitelist.maintained.find((entry) => entry.handle === 'good_user');
-    expect(maintained).toMatchObject({ note: '本人宣言：不刷屏不引流' });
+    expect(maintained).toMatchObject({
+      note: '本人宣言：不刷屏不引流',
+      name: '好用户',
+      avatar_url: 'https://pbs.twimg.com/profile_images/1/ok_400x400.jpg',
+    });
     expect(roster.whitelist.verified.find((entry) => entry.handle === 'rescued_user')).toMatchObject({
       net_votes: 3,
     });

@@ -7,10 +7,28 @@
 import { createServerFn } from '@tanstack/react-start';
 import { env } from 'cloudflare:workers';
 import { getPublicRoster, type RosterPayload } from '../roster';
-import { getLeaderboard, LEADERBOARD, type HunterRow, type SeasonChampion, type SeasonWindow } from '../leaderboard';
+import { getLeaderboard, LEADERBOARD, toPublicHunterRow, type HunterRow, type SeasonChampion, type SeasonWindow } from '../leaderboard';
 
 export const getRosterData = createServerFn({ method: 'GET' }).handler(async (): Promise<RosterPayload | null> =>
   getPublicRoster(env),
+);
+
+/** 白名单/抢救公示面的瘦身 loader：这两个页面用不到 blacklist.entries（含全部
+ *  证据字段），整份 RosterPayload 反序列化进 HTML 是公示站最重两页的传输放大。 */
+export interface WhitelistRosterData {
+  snapshot_version: string;
+  whitelist: Pick<RosterPayload['whitelist'], 'maintained' | 'verified'>;
+}
+
+export const getWhitelistData = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<WhitelistRosterData | null> => {
+    const roster = await getPublicRoster(env);
+    if (!roster) return null;
+    return {
+      snapshot_version: roster.snapshot_version,
+      whitelist: { maintained: roster.whitelist.maintained, verified: roster.whitelist.verified },
+    };
+  },
 );
 
 /** 词库公示面：latest manifest + 版本化 official.json（R2 内部直读，与 /v1 同源） */
@@ -30,21 +48,29 @@ export const getKeywordData = createServerFn({
 }).handler(async (): Promise<KeywordPublicData | null> => {
   const manifestObject = await env.KEYWORD_PACKS?.get('keyword-packs/latest.json');
   const manifestRaw = manifestObject ? await manifestObject.text() : null;
-  if (!manifestRaw) return null;  let manifest: { pack_version?: unknown; signature?: unknown; files?: Array<{ packs?: unknown; rules?: unknown }> };
+  if (!manifestRaw) return null;
+  let manifestVersion: string;
+  let signed: boolean;
   try {
-    manifest = JSON.parse(await manifestRaw) as typeof manifest;
+    const manifest = JSON.parse(manifestRaw) as { pack_version?: unknown; signature?: unknown };
+    if (typeof manifest.pack_version !== 'string') return null;
+    manifestVersion = manifest.pack_version;
+    signed = manifest.signature != null;
   } catch {
     return null;
   }
-  if (typeof manifest.pack_version !== 'string') return null;
+  // 词库包发布后不可变：解析结果按 pack_version 模块级 memo，
+  // 词库 Tab 的每次 SSR 请求只读一个小 manifest
+  if (keywordMemo && keywordMemo.version === manifestVersion) return keywordMemo.value;
+
   const bodyObject = await env.KEYWORD_PACKS?.get(
-    `keyword-packs/${encodeURIComponent(manifest.pack_version)}/official.json`,
+    `keyword-packs/${encodeURIComponent(manifestVersion)}/official.json`,
   );
   const bodyRaw = bodyObject ? await bodyObject.text() : null;
   if (!bodyRaw) return null;
   let body: { packs?: Array<{ id?: unknown; name?: unknown; rules?: Array<Record<string, unknown>> }> };
   try {
-    body = JSON.parse(await bodyRaw) as typeof body;
+    body = JSON.parse(bodyRaw) as typeof body;
   } catch {
     return null;
   }
@@ -60,13 +86,17 @@ export const getKeywordData = createServerFn({
       };
     });
   const total = packs.reduce((n, p) => n + p.rules.length, 0);
-  return {
-    pack_version: manifest.pack_version,
-    signed: manifest.signature != null,
+  const value: KeywordPublicData = {
+    pack_version: manifestVersion,
+    signed,
     total_rules: total,
     packs,
   };
+  keywordMemo = { version: manifestVersion, value };
+  return value;
 });
+
+let keywordMemo: { version: string; value: KeywordPublicData } | null = null;
 
 function rawRulesToPhrases(raw: Array<Record<string, unknown>>): Array<{ phrase: string }> {
   return raw
@@ -107,5 +137,5 @@ export interface PublicBoard {
 }
 
 function trimRow(row: HunterRow & { rank: number }): PublicBoardRow {
-  return { ...row, id: String(row.id).slice(0, 12) } as PublicBoardRow;
+  return toPublicHunterRow(row) as PublicBoardRow;
 }

@@ -22,6 +22,10 @@ export const UI_COPY = {
     aboutLinks: '关于',
     githubLink: 'GitHub',
     officialSiteLink: '官网',
+    siteBlacklist: '官网黑名单公示',
+    siteWhitelist: '官网推荐白名单',
+    siteKeywords: '官网词库',
+    siteRescue: '官网抢救公示',
     marked: '标注',
     blocked: '拉黑',
     restored: '撤销',
@@ -35,17 +39,17 @@ export const UI_COPY = {
     batchBlockSelected: (count: number) => `一键拉黑选中的 ${count} 个`,
     selectedCount: (selected: number, total: number) => `待清理 ${selected} / ${total}`,
     excludeItem: '剔除',
-    restoreItem: '恢复',
-    excludeItemHint: '本次不拉黑该账号',
+    excludeItemHint: '本次清理不再出现该账号',
     selectAll: '全选',
     deselectAll: '全不选',
-    excludedBadge: '已剔除',
+    allDismissed: '已全部剔除',
     openSidePanel: '切换侧边栏',
     sidePanelOpenFailed: '侧边栏打开失败',
     noPostContent: '未抓取到正文',
     refreshPage: '刷新当前页面清单',
     manageBlocked: '拉黑记录',
     noBlocked: '还没有拉黑记录',
+    blockedTweet: '看推文',
     falsePositiveList: '白名单',
     missedAccount: '漏网账号',
     missedAccountHint: '输入 @用户名或粘贴 X 个人主页链接',
@@ -54,9 +58,11 @@ export const UI_COPY = {
     manualBlocked: (handle: string) => `已拉黑 @${handle}`,
     communityClean: '社区',
     cloudProtected: '已排除',
+    showMoreEntries: (count: number) => `加载剩余 ${count} 条`,
     communitySourceMaintainer: '推荐白名单',
     votesUnit: '票',
-    communityEmpty: '当前没有新增账号需要处理。同步到新名单后会显示在这里。',
+    communityEmpty: '当前没有新增账号需要处理',
+    communityEmptyDetail: '同步到新名单后会显示在这里',
     startCommunityClean: (count: number) => `一键开始清理 ${count} 个`,
     queueProgress: (done: number, total: number) => `清理进度 ${done} / ${total}`,
     manualBlockHint: '没识别到？可在帖子右下角点「拉黑」手动处理',
@@ -142,7 +148,7 @@ export const UI_COPY = {
     strength: '检测强度',
     autoContribute: '名单上传',
     localOnly: '仅本地运行',
-    localOnlyHint: '开启后只在本机识别和拉黑，不上传社区名单贡献。',
+    localOnlyHint: '开启后只在本机识别和拉黑。关闭时，你确认拉黑的账号会上传账号名、判断依据与其公开发布的推文/简介，用于防垃圾与纠错。',
     dataConsentRequired: 'Firefox 未获得社区数据上传同意，已保持仅本地运行',
     allowlistEmpty: '还没有白名单账号',
     recommendListTitle: '推荐白名单',
@@ -204,7 +210,10 @@ export const UI_COPY = {
     hunterTopBoard: '本周榜',
     hunterUnranked: '本周零杀，打野去',
     hunterOpenSite: '官网看完整榜单 · 规则与赛季',
+    hunterLoading: '榜单加载中',
     hunterLoadFailed: '榜单加载失败',
+    hunterRetry: '重试',
+    hunterAccuracyHint: '共识击杀里被社区复核确认的比例',
     hunterXHandle: 'X 账号',
     hunterXHandleInvalid: 'X 账号格式不对（不带 @，1-15 位字母数字下划线）',
     hunterEmailHint:
@@ -245,17 +254,17 @@ export const UI_COPY = {
     batchBlockSelected: (count: number) => `Block selected (${count})`,
     selectedCount: (selected: number, total: number) => `${selected} of ${total} selected`,
     excludeItem: 'Exclude',
-    restoreItem: 'Keep',
-    excludeItemHint: 'Exclude from this cleanup',
+    excludeItemHint: 'Dismiss from this cleanup',
     selectAll: 'Select all',
     deselectAll: 'Deselect all',
-    excludedBadge: 'Excluded',
+    allDismissed: 'All dismissed',
     openSidePanel: 'Side Panel',
     sidePanelOpenFailed: 'Failed to open side panel',
     noPostContent: 'No post content captured',
     refreshPage: 'Refresh accounts on this page',
     manageBlocked: 'Block history',
     noBlocked: 'No blocked accounts yet',
+    blockedTweet: 'View tweet',
     falsePositiveList: 'Allowlist',
     missedAccount: 'Missed account',
     missedAccountHint: 'Enter an @handle or paste an X profile URL',
@@ -264,9 +273,11 @@ export const UI_COPY = {
     manualBlocked: (handle: string) => `Blocked @${handle}`,
     communityClean: 'Community',
     cloudProtected: 'Excluded',
+    showMoreEntries: (count: number) => `Show ${count} more`,
     communitySourceMaintainer: 'Maintainer-verified',
     votesUnit: 'votes',
-    communityEmpty: 'No new accounts to process. Newly synced entries will appear here.',
+    communityEmpty: 'No new accounts to process',
+    communityEmptyDetail: 'Newly synced entries will appear here',
     startCommunityClean: (count: number) => `Start cleaning ${count}`,
     queueProgress: (done: number, total: number) => `Progress ${done} / ${total}`,
     manualBlockHint: "Not detected? Use the Block button at a post's bottom-right",
@@ -355,7 +366,8 @@ export const UI_COPY = {
     strength: 'Detection level',
     autoContribute: 'List uploads',
     localOnly: 'Local-only mode',
-    localOnlyHint: 'Keep detection and blocking on this device without community uploads.',
+    localOnlyHint:
+      'Keep detection and blocking on this device without community uploads. When uploads are on, accounts you block send their handle, the evidence behind the call, and their publicly posted tweet/bio for spam analysis and correction.',
     dataConsentRequired: 'Firefox community data consent was not granted; local-only mode remains on',
     allowlistEmpty: 'No allowlisted accounts yet',
     recommendListTitle: 'Recommended',
@@ -397,6 +409,10 @@ export const UI_COPY = {
     rescue: 'Appeal',
     failed: 'Failed',
     unknown: 'Unknown',
+    siteBlacklist: 'Blacklist on the site',
+    siteWhitelist: 'Whitelist on the site',
+    siteKeywords: 'Keyword packs on the site',
+    siteRescue: 'Rescue list on the site',
     // Hunting leaderboard
     statToday: 'Today kills',
     statBullets: 'Bullets left',
@@ -419,7 +435,10 @@ export const UI_COPY = {
     hunterTopBoard: 'This week',
     hunterUnranked: 'No kills yet, go hunting',
     hunterOpenSite: 'Full board, rules and seasons on the site',
+    hunterLoading: 'Loading board',
     hunterLoadFailed: 'Board failed to load',
+    hunterRetry: 'Retry',
+    hunterAccuracyHint: 'Share of consensus kills confirmed by community review',
     hunterXHandle: 'X handle',
     hunterXHandleInvalid: 'Invalid X handle (no @, 1-15 letters/digits/underscore)',
     hunterEmailHint:
@@ -479,7 +498,25 @@ export function localizedDetectionReason(
   const hostname = detection.reason.match(/[（(]([^()（）]+)[）)]/)?.[1];
   if (detection.ruleId?.startsWith('keyword:')) {
     // “heuristic”只是 Detector 内部接口名；用户词库要显示人话，不能泄露 rule id。
-    return detection.reason.replace(/^启发式：/, '');
+    const raw = detection.reason.replace(/^启发式：/, '');
+    if (language === 'zh') {
+      return raw;
+    }
+    // 词库短语本身是中文（官方库 630 条成人话术），前缀与命中字段翻给英文用户，
+    // 短语保留原样便于核对词包。
+    const fieldValue = raw.match(/·\s*(昵称|账号|正文|简介)$/)?.[1];
+    const fieldEn: Record<string, string> = {
+      昵称: 'name',
+      账号: 'handle',
+      正文: 'post',
+      简介: 'bio',
+    };
+    const stripped = raw.replace(/·\s*(昵称|账号|正文|简介)$/, '');
+    const prefix = stripped.startsWith('命中你的关键词：')
+      ? 'Custom keyword: '
+      : 'Official rule: ';
+    const body = stripped.replace(/^(?:命中你的关键词|命中官方规则)：/, '');
+    return `${prefix}${body}${fieldValue ? ` · ${fieldEn[fieldValue]}` : ''}`;
   }
   if (language === 'zh') {
     switch (detection.ruleId) {

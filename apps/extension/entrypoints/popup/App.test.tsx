@@ -636,10 +636,10 @@ describe('popup App 渲染冒烟', () => {
     });
 
     const rootEl = renderApp();
-    await new Promise((resolve) => setTimeout(resolve, 150));
-
-    // 理由文案展示在清理页（页面批量按钮旁）
-    expect(rootEl.textContent).toContain('官方暂停了拉黑操作：接口排查中');
+    // Wait for observable async state, not machine-dependent fixed rendering latency.
+    await vi.waitFor(() => {
+      expect(rootEl.textContent).toContain('官方暂停了拉黑操作：接口排查中');
+    });
     await act(async () => buttonWithText(rootEl, '名单').click());
     // 社区批量入口本来可用（有合格条目），降级后必须禁用
     const cleanBtn = rootEl.querySelector<HTMLButtonElement>('.community-clean-action');
@@ -1030,9 +1030,11 @@ describe('popup App 渲染冒烟', () => {
       excludeBtns[1]?.click(); // 剔除第 2 个（normal_user）
     });
 
-    // 按钮文案联动更新为选中的 1 个
-    expect(rootEl.textContent).toContain('已剔除');
-    expect(primaryBtn?.textContent).toContain('一键拉黑选中的 1 个');
+    // 剔除后整行离开清单，其余按钮文案联动为选中的 1 个
+    const reviewedRows = [...rootEl.querySelectorAll('.review-item')];
+    expect(reviewedRows.some((row) => row.textContent?.includes('normal_user'))).toBe(false);
+    // 剔除专属账号后没有另行勾选，按钮回到「全部 · 剩余数」
+    expect(primaryBtn?.textContent).toContain('一键拉黑全部 · 1');
 
     // 点击一键拉黑，校验只发出了未剔除的账号
     await act(async () => {

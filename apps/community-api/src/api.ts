@@ -1,6 +1,6 @@
 /**
  * Worker 分发层（剥离自 index.ts 的 catch-all）：
- * API 家族（/v1/* /api/* /healthz）与 /leaderboard 走 Hono；
+ * API 家族（/v1/* /api/* /healthz）走 Hono；
  * OG 分享图、robots.txt、sitemap.xml 在这里直出；
  * 其余路径返回 null —— 交给 TanStack Start SSR（server.ts）。
  */
@@ -21,12 +21,11 @@ export async function handleWorkerRoutes(
 ): Promise<Response | null> {
   const { pathname, origin } = new URL(request.url);
 
-  // API 家族与打野榜页（所有 host 通用，沿用 index.ts 的行为）
+  // API 家族（所有 host 通用，沿用 index.ts 的行为）
   if (
     pathname.startsWith('/v1/') ||
     pathname.startsWith('/api/') ||
-    pathname === '/healthz' ||
-    pathname === '/leaderboard'
+    pathname === '/healthz'
   ) {
     return apiApp.fetch(request, env);
   }
@@ -45,21 +44,19 @@ const SITE_PAGES = [
   { path: '/guide', title: '使用教程' },
   { path: '/lists/blacklist', title: '黑名单公示' },
   { path: '/lists/whitelist', title: '推荐白名单公示' },
+  { path: '/lists/rescue', title: '社区抢救名单公示' },
   { path: '/lists/keywords', title: '关键词词库公示' },
   { path: '/lists/ranked', title: '打野排位赛周榜' },
   { path: '/lists/apply', title: '入册申请与误伤申诉' },
-  { path: '/leaderboard', title: '打野周榜（观看页）' },
 ] as const;
 
 function robotsTxt(): Response {
-  // /leaderboard 保持 noindex（纯观看页，扩展内未匿名榜不面向搜索）
   return new Response(
     `# FeedSieve 官网公示站
 User-agent: *
 Allow: /
 Disallow: /v1/
 Disallow: /api/
-Disallow: /leaderboard
 `,
     { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } },
   );
@@ -137,7 +134,13 @@ async function listOgStat(
     base.big = `${roster?.whitelist.maintained.length ?? 0}`;
     base.bigLabel = '个入册账号';
     base.line = '一票豁免任何标注';
-    base.sub = roster ? '社区抢救误标条目同时展示' : '快照加载中';
+    base.sub = roster ? '与扩展执行豁免口径同源' : '快照加载中';
+  } else if (page === 'rescue') {
+    base.title = '社区抢救名单公示';
+    base.big = `${roster?.whitelist.verified.length ?? 0}`;
+    base.bigLabel = '条抢救记录';
+    base.line = '误标被推翻的账号';
+    base.sub = roster ? '与扩展执行豁免口径同源' : '快照加载中';
   } else if (page === 'ranked') {
     const board = await getLeaderboard(env, 'all');
     base.title = '打野排位赛';
@@ -160,7 +163,7 @@ async function listOgStat(
     base.title = '入册申请与误伤申诉';
     base.big = '邮箱';
     base.bigLabel = '验证后复核';
-    base.line = '每 IP / 每日 20 条额度';
+    base.line = '邮箱验证后进维护者复核队列';
     base.sub = '博主宣言入册或误伤申诉';
   } else if (page !== 'blacklist') {
     return null;

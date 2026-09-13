@@ -1,18 +1,18 @@
 {
   "name": "@feedsieve/extension",
-  "version": "0.8.2",
+  "version": "0.9.5",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox --mv3",
     "preview:popup": "vite --config vite.preview.config.mjs",
-    "build": "wxt build",
-    "build:firefox": "wxt build -b firefox --mv3",
+    "build": "node scripts/copy-runtime-data.mjs && wxt build",
+    "build:firefox": "node scripts/copy-runtime-data.mjs && wxt build -b firefox --mv3",
     "zip": "wxt zip",
-    "zip:firefox": "wxt zip -b firefox --mv3",
-    "postinstall": "wxt prepare",
-    "typecheck": "tsc --noEmit"
+    "zip:firefox": "node scripts/copy-runtime-data.mjs && wxt zip -b firefox --mv3",
+    "postinstall": "node scripts/copy-runtime-data.mjs && wxt prepare",
+    "typecheck": "node scripts/copy-runtime-data.mjs && tsc --noEmit"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",

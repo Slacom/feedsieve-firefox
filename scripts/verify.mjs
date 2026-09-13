@@ -1,5 +1,3 @@
-/* global process, console */
-
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

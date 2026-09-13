@@ -28,9 +28,10 @@ export interface DetectInput {
   /** hostname 由 Reader 预先解析好，Detector 不做 URL 解析。 */
   links?: ReadonlyArray<{ href: string; hostname?: string; display?: string }>;
   /**
-   * 官方词库已佐证（调用方或 detect() 在前面 keyword:*official* 规则命中后
-   * 置位）。把「账号说了引流话术」从写死小词表解耦到线上词库通道：
-   * 词库当天新增的短语可直接背书词沙拉/组合层判定。
+   * 官方词库已佐证（调用方显式注入）。历史设计是「keyword:*official* 规则
+   * 命中后循环内向前传播」，但因为启发式命中即 return，后续规则永远吃不到
+   * 这个 flag，生产管线也会在 keyword 命中时直接返回——它从未真正生效。
+   * 现在只作为评测层输入：corpus 用例用手工注入表达「词库先命中」的场景。
    */
   keywordCorroborated?: boolean;
 }
@@ -159,18 +160,17 @@ export function detect(
   }
 
   const heuristics = options.heuristics ?? DEFAULT_HEURISTICS;
-  // 词库佐证沿规则顺序向前传播：keyword:*official* 命中后，后面的 word-salad /
-  // weak-signal-combo 能以线上词库当轮命中作为账号侧佐证（词库 15 分钟热更新）。
-  let keywordCorroborated = input.keywordCorroborated ?? false;
+  // 同一轮的所有启发式共享同一个输入对象。关键词规则组会以对象身份缓存
+  // 一次批量匹配的结果，避免为数百条规则重复扫描同一昵称/正文/简介。
+  const heuristicInput = { ...input, handle };
   for (const rule of heuristics) {
     let matched: string | null;
     try {
-      matched = rule.check({ ...input, handle, keywordCorroborated });
-      if (matched && rule.id.startsWith('keyword:official:')) {
-        keywordCorroborated = true;
-      }
-    } catch {
-      // 单条规则异常不拖垮整个检测
+      matched = rule.check(heuristicInput);
+    } catch (error) {
+      // 单条规则异常不拖垮整个检测，但必须留痕：一条线上必炸的规则静默消失
+      // 等于无声漏报。detection-log 不记异常，console 是唯一痕迹。
+      console.warn(`[detector] heuristic ${rule.id} threw`, error);
       continue;
     }
     if (matched) {
@@ -198,11 +198,28 @@ export function detect(
  * 生产 v0 值实测全部 'f' 开头（旧哈希高位坍缩），与 v1 的 '3' 前缀零重叠；
  * 假想的 '3' 开头 v0 旧值与 v1 距离属不同哈希族的伪随机值，阈值 2 必然拒绝。
  */
+/**
+ * 已知模板 hex→位向量的解析结果按集合缓存：指纹集有数千条，deep_clean
+ * 下每条 miss 推文都会整集遍历，每次重新 parse hex 是纯浪费。
+ * WeakMap 挂在集合对象上——快照更新产生新 Set 时自然失效。
+ */
+const SIMHASH_BITS_CACHE = new WeakMap<ReadonlySet<string>, Map<string, ReturnType<typeof simhashFromHex>>>();
+
+function knownSimhashBits(simhashes: ReadonlySet<string>): Map<string, ReturnType<typeof simhashFromHex>> {
+  let parsed = SIMHASH_BITS_CACHE.get(simhashes);
+  if (!parsed) {
+    parsed = new Map();
+    SIMHASH_BITS_CACHE.set(simhashes, parsed);
+  }
+  return parsed;
+}
+
 function findNearSimhash(text: string, simhashes: ReadonlySet<string>): string | null {
   const localV0 = fingerprintText(text);
   const localV1 = fingerprintTextV1(text);
   const localBitsV0 = localV0 ? simhashFromHex(localV0) : null;
   const localBitsV1 = localV1 ? simhashFromHex(localV1) : null;
+  const parsedBits = knownSimhashBits(simhashes);
 
   let nearest: string | null = null;
   let nearestDist = SIMHASH_HAMMING_THRESHOLD + 1;
@@ -210,7 +227,12 @@ function findNearSimhash(text: string, simhashes: ReadonlySet<string>): string |
     if (!localBitsV0 && !localBitsV1) {
       break;
     }
-    const knownBits = simhashFromHex(known);
+    let knownBits = parsedBits.get(known);
+    if (knownBits === undefined) {
+      knownBits = simhashFromHex(known);
+      parsedBits.set(known, knownBits);
+      if (parsedBits.size > 100_000) parsedBits.clear(); // 环形保鲜，不熬内存
+    }
     if (knownBits === null) {
       continue;
     }

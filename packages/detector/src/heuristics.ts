@@ -217,8 +217,10 @@ function isGarbledBatchHandle(handle: string | undefined): boolean {
     return false;
   }
   const rare = normalized.match(WORD_SALAD_RARE_LETTER_RE)?.length ?? 0;
-  return rare >= detectorConfig.garbledHandle.rareLetterCount &&
-    maxConsonantRun(normalized) >= detectorConfig.garbledHandle.maxConsonantRun;
+  return (
+    rare >= detectorConfig.garbledHandle.rareLetterCount &&
+    maxConsonantRun(normalized) >= detectorConfig.garbledHandle.maxConsonantRun
+  );
 }
 
 const wordSalad: HeuristicRule = {
@@ -231,9 +233,9 @@ const wordSalad: HeuristicRule = {
     if (wordSaladShapeStrength(text) !== 'strong') {
       return null;
     }
-    // 佐证双通道：① 官方词库已在本轮 detect 里命中任一字段
-    //（keywordCorroborated 由 detect() 按规则顺序传播，昵称/简介里「无偿约」
-    //  这类未进小词表的话术也能背书）；② 原硬编码隐语表，离线兜底。
+    // 佐证双通道：① 官方词库佐证（DetectInput.keywordCorroborated，仅评测层
+    // 手工注入——生产管线 keyword 命中即直接返回，不会走到 word-salad）；
+    // ② 原硬编码隐语表，离线兜底。
     const side = [input.displayName, input.bio].filter(Boolean).join(' ');
     if (
       !WORD_SALAD_TRAFFIC_HINT_RE.test(side) &&
@@ -259,9 +261,15 @@ const PORN_BAIT_FU_RE =
  */
 const EROGENOUS_MARKERS: ReadonlyArray<readonly [RegExp, string]> = [
   [/涩|色色/, '涩'],
-  [/没我骚|比我[^。]{0,8}骚/, '骚'],
+  // 比较对象不限于「我」：没人比她骚 / 比你骚 同族（2026-09-13 实测「比她」逃逸）
+  [/没[我她你他]骚|比[我她你他][^。]{0,8}骚/, '骚'],
   [/玩[得的]{1,2}更?开/, '玩得开'],
-  [/[🍑🍒🍆💧💋🌹]/u, '擦边emoji'],
+  // 2026-09-13 捧主页话术家族：「就她的主页能打✈️了」「她太涩了我真顶不住」。
+  // 各自单独都是普通口语（游戏/旅行语境），永远不单独成立。
+  [/顶不住/, '顶不住'],
+  [/主页能打/, '主页能打'],
+  // ✈️ 是多码点字符（U+2708+FE0F），不能进字符类（no-misleading-character-class）
+  [/🍑|🍒|🍆|💧|💋|🌹|✈️/u, '擦边emoji'],
 ];
 
 const pornBaitZh: HeuristicRule = {
@@ -309,17 +317,14 @@ const URL_STRIP_RE = /https?:\/\/\S+|\b[\w-]+(?:\.[\w-]+)+\/\S*/gi;
 const REPEATED_CHAR_RE = /([^\s\p{P}\p{S}])\1{3,}/u;
 
 function countEmoji(text: string): number {
-  return (text.match(EMOJI_CHAR_RE)?.length ?? 0);
+  return text.match(EMOJI_CHAR_RE)?.length ?? 0;
 }
 
 function isPureEmojiText(text: string): boolean {
   if (!countEmoji(text)) {
     return false;
   }
-  const remaining = text
-    .replace(EMOJI_SEQUENCE_RE, '')
-    .replace(LEFTOVER_SYMBOL_RE, '')
-    .trim();
+  const remaining = text.replace(EMOJI_SEQUENCE_RE, '').replace(LEFTOVER_SYMBOL_RE, '').trim();
   return remaining === '';
 }
 
@@ -387,33 +392,83 @@ const weakSignalCombo: HeuristicRule = {
       return null;
     }
     const evidence: string[] = [];
-    const text = [input.text, input.bio].filter(Boolean).join('\n');
-    if (text) {
+    const fields = [input.text, input.bio].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    );
+    if (fields.length > 0) {
       // 单个擦边 marker（≥2 条已由 porn-bait-zh 先行命中，这里只收尾）
-      const marker = EROGENOUS_MARKERS.find(([pattern]) => pattern.test(text));
+      const marker = EROGENOUS_MARKERS.find(([pattern]) =>
+        fields.some((field) => pattern.test(field)),
+      );
       if (marker) {
         evidence.push(`擦边特征（${marker[1]}）`);
-      } else if (isPureEmojiText(text)) {
+      } else if (fields.some(isPureEmojiText)) {
         evidence.push('纯 emoji 正文');
       }
-      if (isWordSaladShape(text)) {
+      if (fields.some(isWordSaladShape)) {
         evidence.push('英文单词沙拉形状');
-      } else if (wordSaladShapeStrength(text) === 'weak') {
+      } else if (fields.some((field) => wordSaladShapeStrength(field) === 'weak')) {
         // 弱形状（2–3 词 + ≥2 emoji）永不单独定案，仅在锚点成立时作为佐证之一
         evidence.push('英文单词沙拉弱形状');
       }
-      if (hasRepeatedChars(text)) {
+      if (fields.some(hasRepeatedChars)) {
         evidence.push('重复灌水字符');
       }
     }
     const nameEmoji = countEmoji(input.displayName?.trim() ?? '');
-    if (nameEmoji >= detectorConfig.combo.minNameEmoji) {
+    // 装饰昵称只增强已有内容证据；正常用户昵称里的 emoji 不能独立定案。
+    if (evidence.length > 0 && nameEmoji >= detectorConfig.combo.minNameEmoji) {
       evidence.push(`装饰昵称（${nameEmoji} 个 emoji）`);
     }
     if (evidence.length === 0) {
       return null;
     }
     return `批量注册特征 + ${evidence.join(' + ')}`;
+  },
+};
+
+/**
+ * 联系方式载荷规则（2026-09-12 娇妻/单男变体实锤）。
+ *
+ * 正文的裸长数字段（11 位起，手机号/带尾码号/杂号）单独出现不成立——
+ * 时间戳、金额、编号都可能这么长；必须叠加「引流钩子」（看简介/看我主页/
+ * 私信/加我/常见通讯工具名）才算号码引流。钩子在 text/bio/displayName 任一
+ * 字段即算（displayName 可能被懒加载吞掉：缺就漏判，无误伤面）。
+ * 先剥 URL，避免把网址里的长参数段当号码。
+ * 与 weak-signal-combo 同层的确认制 review：误标成本是「看一眼不拉黑」。
+ */
+const PAYLOAD_DIGITS_RE = /(?<![\d.])\d{11,}(?![\d.])/;
+const CONTACT_HINT_RE =
+  /看我简介|看简介|我主页|私信|加我|威信|微信|薇信|vx|vx号|wx|tg|telegram|看头像/i;
+const PAYLOAD_URL_STRIP_RE = /https?:\/\/\S+|\b[\w-]+(?:\.[\w-]+)+\/\S*/gi;
+
+function normalizedContactPayload(value: string): string {
+  return (
+    value
+      .normalize('NFKC')
+      .replace(/\p{Cf}/gu, '')
+      .replace(PAYLOAD_URL_STRIP_RE, ' ')
+      // 号码常被空格、点、横线和表情拆开；只有夹在数字之间的分隔符才移除。
+      .replace(/(?<=\d)[\s\p{P}\p{S}]*(?=\d)/gu, '')
+  );
+}
+
+const contactNumberBait: HeuristicRule = {
+  id: 'contact-number-bait',
+  check(input) {
+    const text = normalizedContactPayload(input.text ?? '');
+    if (!PAYLOAD_DIGITS_RE.test(text)) {
+      return null;
+    }
+    const hints = [input.text, input.bio, input.displayName]
+      .filter(Boolean)
+      .join('\n')
+      .normalize('NFKC')
+      .replace(/\p{Cf}/gu, '');
+    if (!CONTACT_HINT_RE.test(hints)) {
+      return null;
+    }
+    return '正文数字载荷（≥11 位）+ 简介钩子话术';
   },
 };
 
@@ -425,10 +480,11 @@ export const DEFAULT_HEURISTICS: readonly HeuristicRule[] = [
   templatedText,
   wordSalad,
   weakSignalCombo,
+  contactNumberBait,
 ];
 
 /**
  * 弱信号组合层单独导出：扩展运行时只装配本规则（其余内置单信号规则
  * 留在 detector 评测层，分层决策见 extension detection-policy）。
  */
-export { weakSignalCombo };
+export { weakSignalCombo, contactNumberBait };

@@ -3,7 +3,12 @@
  * 供 server.ts（生产入口）调用；测试走 api-entry（cloudflare vitest 无法加载
  * TanStack Start 的虚拟 server-entry 模块，cron 不经它）。
  */
-import { killSwitchNeedsPublish, generateSnapshot, readSnapshotDirty, clearSnapshotDirty } from './snapshot';
+import {
+  killSwitchNeedsPublish,
+  generateSnapshot,
+  readSnapshotDirty,
+  clearSnapshotDirty,
+} from './snapshot';
 import { settleDueSeasons } from './leaderboard';
 
 // 定时发布是异步化的消费端：有脏标记才生成；内容未变时复用版本并清除标记。
@@ -42,4 +47,21 @@ export async function settleSeasonsScheduled(env: Cloudflare.Env): Promise<void>
   } catch (error) {
     console.error('[community-api] cron season settle failed:', error);
   }
+}
+
+/**
+ * cron 全量编排：快照日更 + 赛季结算 + 死账号定向探活。
+ * 抽成单函数供两个环境入口共用（index.ts 测试入口 / server.ts 生产入口）：
+ * 新增定时消费端只改这里，别再出现 server 独有探活而 index 静默丢掉的漂移
+ * （2026-09-12 体检发现的隐患）。
+ */
+export async function runScheduledCron(env: Cloudflare.Env): Promise<void> {
+  // Retain evidence and review history; only expire obsolete request quota counters.
+  await env.DB.prepare(
+    "DELETE FROM training_sample_usage WHERE day < date('now', '-7 days')",
+  ).run();
+  await scheduledAutoPublish(env);
+  await settleSeasonsScheduled(env);
+  const { probeAccountHealthScheduled } = await import('./prober');
+  await probeAccountHealthScheduled(env);
 }

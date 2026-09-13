@@ -9,8 +9,7 @@
 import handler from '@tanstack/react-start/server-entry';
 import { handleWorkerRoutes } from './api';
 import { isAdminHost, isSiteHost } from './lib/hosts';
-import { scheduledAutoPublish, settleSeasonsScheduled } from './scheduled';
-import { probeAccountHealthScheduled } from './prober';
+import { runScheduledCron } from './scheduled';
 
 // Nitro 入口的 fetch 在 Cloudflare 上接收 (request, env, ctx)，
 // 其自带类型按通用平台声明为 (request, opts)，这里做一次桥接
@@ -26,6 +25,14 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'X-Frame-Options': 'SAMEORIGIN',
+  // CSP 基线：站点有用户提交内容渲染（宣言/贡献短语）。TanStack Start 的
+  // 水合数据走内联 <script>，主题启动脚本也是内联的——script-src 必须留
+  // 'unsafe-inline'（nonce 需要改 Nitro 渲染管线，收益不成比例）；其余
+  // 面向（object/frame/base/form）全部收死。页面 fetch 全部同源相对路径。
+  'Content-Security-Policy':
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+    + "img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; "
+    + "frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'",
 };
 
 /** 包一层新 Response 注入安全头（不动缓存里已存的副本） */
@@ -48,7 +55,11 @@ function htmlCacheKey(request: Request): Request | URL | string {
   return `https://site-cache.feedsieve.internal${url.pathname}${url.search}`;
 }
 
-async function cachedHtml(request: Request, build: () => Promise<Response>): Promise<Response> {
+async function cachedHtml(
+  request: Request,
+  ctx: { waitUntil: (p: Promise<unknown>) => void },
+  build: () => Promise<Response>,
+): Promise<Response> {
   if (request.method !== 'GET') return build();
   const key = htmlCacheKey(request);
   const hit = await htmlCache.match(key);
@@ -60,10 +71,17 @@ async function cachedHtml(request: Request, build: () => Promise<Response>): Pro
     // 否则页面会串到 API 域名的同路径 URL 上。边缘缓存由我们手动做：
     // 存入缓存的副本才带 fresh TTL，键用 .internal 合成前缀，与真实 URL 键空间隔离。
     // body 只能读一次（bodyBuf），served 与 cached 各持独立副本。
+    // TTL 300s、stale-while-revalidate 4h：公示数据随快照日更，60s 重渲染纯浪费。
     const bodyBuf = await res.arrayBuffer();
     const cached = new Response(bodyBuf.slice(0), res);
-    cached.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300, max-age=0');
-    await htmlCache.put(key, cached);
+    cached.headers.set(
+      'Cache-Control',
+      'public, s-maxage=300, stale-while-revalidate=14400, max-age=0',
+    );
+    // 写缓存走 waitUntil，不阻塞响应回边缘
+    ctx.waitUntil(
+      htmlCache.put(key, new Response(bodyBuf.slice(0), cached)),
+    );
     const served = new Response(bodyBuf.slice(0), res);
     served.headers.set('Cache-Control', 'private, max-age=0, must-revalidate');
     return served;
@@ -98,7 +116,7 @@ export default {
       if ((pathname.startsWith('/assets/') || pathname.startsWith('/fonts/')) && env.ASSETS) {
         return withSecurityHeaders(await env.ASSETS.fetch(request));
       }
-      return cachedHtml(request, async () =>
+      return cachedHtml(request, ctx, async () =>
         withSecurityHeaders(await ssrFetch(request, env, ctx)),
       );
     }
@@ -107,9 +125,7 @@ export default {
     }
     return withSecurityHeaders(jsonNotFound());
   },
-  async scheduled(event: ScheduledController, env: Cloudflare.Env) {
-    await scheduledAutoPublish(env);
-    await settleSeasonsScheduled(env);
-    await probeAccountHealthScheduled(env);
+  async scheduled(_event: ScheduledController, env: Cloudflare.Env) {
+    await runScheduledCron(env);
   },
 } satisfies ExportedHandler<Cloudflare.Env>;

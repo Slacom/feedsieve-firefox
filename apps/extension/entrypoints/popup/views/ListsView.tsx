@@ -35,7 +35,9 @@ import {
   allowlistReason,
   AppIcon,
   FAILURE_LABELS,
+  OfficialLinkIcon,
   formatDate,
+  HelpIcon,
   normalizeManualInput,
 } from './shared';
 import QueuePanel from './QueuePanel';
@@ -66,6 +68,8 @@ interface ListsViewProps {
   refreshPageMarked: () => Promise<void>;
   pauseDestructive: boolean;
   communityEntries: CommunityEntry[];
+  /** 社区快照仍在拉取：还没落定前不给空态（避免闪现「没有需要处理的账号」） */
+  communityEntriesLoading?: boolean;
   /** 推荐白名单（快照 whitelist 段下调）：只读展示，含维护者背书理由 note */
   recommendList: WhitelistEntry[];
 }
@@ -77,11 +81,14 @@ export default function ListsView({
   refreshPageMarked,
   pauseDestructive,
   communityEntries,
+  communityEntriesLoading = false,
   recommendList,
 }: ListsViewProps) {
   const t = UI_COPY[language];
   const [listView, setListView] = useState<ListView>(initialListView);
   const [blocked, setBlocked] = useState<BlockedAccount[] | null>(null);
+  /** 当前展开推文原文的拉黑记录（单选互斥，handle 为键） */
+  const [expandedTweet, setExpandedTweet] = useState<string | null>(null);
   const [allowlist, setAllowlist] = useState<AllowlistItem[] | null>(null);
   const [following, setFollowing] = useState<FollowingAllowlistItem[] | null>(null);
   const [followingSync, setFollowingSync] = useState<FollowingSyncState>({
@@ -149,6 +156,13 @@ export default function ListsView({
     return () => unsubs.forEach((unsub) => unsub());
   }, []);
 
+  // 撤销结果与清理页同款：瞬时提示 4s 自动消失，不常驻遮挡
+  useEffect(() => {
+    if (!unblockResult) return;
+    const timer = window.setTimeout(() => setUnblockResult(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [unblockResult]);
+
   async function runUnblock(handle?: string): Promise<void> {
     setRunning(true);
     notify(null);
@@ -167,8 +181,12 @@ export default function ListsView({
   }
 
   async function removeFromAllowlist(handle: string): Promise<void> {
-    await removeAllowed(handle);
-    await browser.runtime.sendMessage({ type: 'feedsieve:labels-sync' }).catch(() => undefined);
+    try {
+      await removeAllowed(handle);
+      await browser.runtime.sendMessage({ type: 'feedsieve:labels-sync' }).catch(() => undefined);
+    } catch {
+      notify(t.openXNotice);
+    }
   }
 
   /** 手动加入白名单（覆盖 @handle / x.com 主页链接两种输入）。 */
@@ -209,13 +227,13 @@ export default function ListsView({
   }
 
   async function startCommunityQueue(): Promise<void> {
-    if (cloudEligible.length === 0) return;
+    if (communityEligible.length === 0) return;
     setRunning(true);
     notify(null);
     try {
       await sendToXPage({
         type: 'feedsieve:community-block-start',
-        items: cloudEligible.map((entry) => ({
+        items: communityEligible.map((entry) => ({
           handle: entry.handle,
           ...(entry.x_user_id ? { xUserId: entry.x_user_id } : {}),
           category: entry.category,
@@ -253,19 +271,20 @@ export default function ListsView({
     return () => window.clearInterval(id);
   }, [followingSyncActive, followingSync.updatedAt]);
 
-  const protectedHandles = new Set([
-    ...(allowlist ?? []).map((item) => item.handle),
-    ...(following ?? []).map((item) => item.handle),
-    ...(blocked ?? []).map((item) => item.handle),
-  ]);
-  const cloudEligibleSet = new Set(
-    communityEntries
-      .filter((entry) => !protectedHandles.has(entry.handle.toLowerCase()))
-      .map((entry) => entry.handle.toLowerCase()),
-  );
-  const cloudEligible = communityEntries.filter((entry) =>
-    cloudEligibleSet.has(entry.handle.toLowerCase()),
-  );
+  const { communityEligible, communityEligibleSet } = useMemo(() => {
+    const protectedSet = new Set([
+      ...(allowlist ?? []).map((item) => item.handle),
+      ...(following ?? []).map((item) => item.handle),
+      ...(blocked ?? []).map((item) => item.handle),
+    ]);
+    const eligible = communityEntries.filter(
+      (entry) => !protectedSet.has(entry.handle.toLowerCase()),
+    );
+    return {
+      communityEligible: eligible,
+      communityEligibleSet: new Set(eligible.map((entry) => entry.handle.toLowerCase())),
+    };
+  }, [communityEntries, allowlist, following, blocked]);
   const sortedEntries = useMemo(() => {
     if (sortMode === 'alpha') {
       return [...communityEntries].sort((a, b) => a.handle.localeCompare(b.handle));
@@ -274,6 +293,20 @@ export default function ListsView({
       (a, b) => b.net_votes - a.net_votes || a.handle.localeCompare(b.handle),
     );
   }, [communityEntries, sortMode]);
+  // 名单可达数千条；一次性 mount 全部节点在弹窗/侧栏里既卡渲染又占内存。
+  // 先挂前 100 条，「加载剩余」逐段放出（与官网公示页分页同口径）。
+  // 排序或名单变更后在 render 期直接重置回第一页（派生状态模式，不借 effect）。
+  const [entryLimit, setEntryLimit] = useState(100);
+  const visibleEntries = useMemo(
+    () => sortedEntries.slice(0, entryLimit),
+    [sortedEntries, entryLimit],
+  );
+  const [pageKey, setPageKey] = useState('');
+  const pageKeyNow = `${sortMode}|${sortedEntries.length}`;
+  if (pageKey !== pageKeyNow) {
+    setPageKey(pageKeyNow);
+    setEntryLimit(100);
+  }
   const queueSummary = blockQueueProgress(queue);
   const queueDone = queueSummary.success + queueSummary.failed;
   const queueActive =
@@ -301,16 +334,6 @@ export default function ListsView({
       : queue?.status === 'paused' && queue.pauseReason === 'rate_limit_storm'
         ? t.queuePausedRateLimit
         : null;
-  const failedSummary = (result: { failed: Array<{ handle: string; code: string }> } | null) =>
-    result?.failed.length
-      ? result.failed
-          .map(
-            (failure) =>
-              `@${failure.handle} (${FAILURE_LABELS[language][failure.code] ?? failure.code})`,
-          )
-          .join(' · ')
-      : null;
-
   return (
     <div className="view-stack lists-view">
       <div className="list-tabs" role="tablist" aria-label={t.lists}>
@@ -323,7 +346,7 @@ export default function ListsView({
           onClick={() => setListView('community')}
         >
           <span>{t.communityClean}</span>
-          <strong>{cloudEligible.length}</strong>
+          <strong>{communityEligible.length}</strong>
         </button>
         <button
           id="blocked-list-tab"
@@ -379,10 +402,10 @@ export default function ListsView({
             <div className="list-head-actions">
               <button
                 className="secondary-action community-clean-action"
-                disabled={running || queueActive || cloudEligible.length === 0 || pauseDestructive}
+                disabled={running || queueActive || communityEligible.length === 0 || pauseDestructive}
                 onClick={() => void startCommunityQueue()}
               >
-                {t.startCommunityClean(cloudEligible.length)}
+                {t.startCommunityClean(communityEligible.length)}
               </button>
               <div className="sort-toggle" role="group" aria-label={`${t.sortVotes}/${t.sortAlpha}`}>
                 <button
@@ -402,6 +425,7 @@ export default function ListsView({
                   {t.sortAlpha}
                 </button>
               </div>
+              <OfficialLinkIcon target="blacklist" label={t.siteBlacklist} />
             </div>
 
             {/* 动作区固定在首屏：这里是队列进度与失败转述 */}
@@ -439,9 +463,10 @@ export default function ListsView({
             ) : null}
 
             {communityEntries.length > 0 ? (
-              <ul className="manage-list community-list" aria-label={t.communityClean}>
-                {sortedEntries.map((entry) => {
-                  const excluded = !cloudEligibleSet.has(entry.handle.toLowerCase());
+              <>
+                <ul className="manage-list community-list" aria-label={t.communityClean}>
+                  {visibleEntries.map((entry) => {
+                  const excluded = !communityEligibleSet.has(entry.handle.toLowerCase());
                   return (
                     <li key={entry.handle} className={`manage-item community-item${excluded ? ' is-excluded' : ''}`}>
                       <span className={`account-avatar${excluded ? ' is-muted' : ''}`} aria-hidden="true">
@@ -464,8 +489,30 @@ export default function ListsView({
                   );
                 })}
               </ul>
+              {sortedEntries.length > visibleEntries.length ? (
+                <button
+                  type="button"
+                  className="show-more-entries"
+                  onClick={() => setEntryLimit((limit) => limit + 100)}
+                >
+                  {t.showMoreEntries(sortedEntries.length - visibleEntries.length)}
+                </button>
+              ) : null}
+            </>
+          ) : communityEntriesLoading ? (
+              <ul className="manage-list community-list" aria-hidden="true">
+                <li className="manage-item community-item">
+                  <span className="account-avatar is-muted" aria-hidden="true">…</span>
+                </li>
+                <li className="manage-item community-item">
+                  <span className="account-avatar is-muted" aria-hidden="true">…</span>
+                </li>
+              </ul>
             ) : (
-              <p className="community-empty">{t.communityEmpty}</p>
+              <div className="empty-panel community-empty-state">
+                <p className="community-empty">{t.communityEmpty}</p>
+                <HelpIcon text={t.communityEmptyDetail} />
+              </div>
             )}
           </>
         ) : listView === 'blocked' ? (
@@ -517,6 +564,18 @@ export default function ListsView({
                         {formatDate(account.blockedAt, language)}
                       </span>
                     </div>
+                    {account.tweetSnippet ? (
+                      <button
+                        type="button"
+                        className="secondary-inline"
+                        aria-expanded={expandedTweet === account.handle}
+                        onClick={() => {
+                          setExpandedTweet(expandedTweet === account.handle ? null : account.handle);
+                        }}
+                      >
+                        {t.blockedTweet}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="secondary-inline"
@@ -525,6 +584,9 @@ export default function ListsView({
                     >
                       {t.undo}
                     </button>
+                    {expandedTweet === account.handle && account.tweetSnippet ? (
+                      <blockquote className="blocked-tweet-text">{account.tweetSnippet}</blockquote>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -536,16 +598,25 @@ export default function ListsView({
             )}
 
             {unblockResult ? (
-              <p className="result-message" role="status">
-                {t.restoredResult(unblockResult.unblocked.length)}
-                {failedSummary(unblockResult) ? (
-                  <span className="result-failure">
-                    {' '}
-                    · {t.failedResult(unblockResult.failed.length)} ·{' '}
-                    {failedSummary(unblockResult)}
-                  </span>
+              <>
+                <p className="result-message" role="status">
+                  {t.restoredResult(unblockResult.unblocked.length)}
+                  {unblockResult.failed.length > 0
+                    ? ` · ${t.failedResult(unblockResult.failed.length)}`
+                    : null}
+                </p>
+                {unblockResult.failed.length > 0 ? (
+                  // 失败明细进滚动容器（与清理页同款），不无限换行
+                  <ul className="queue-failed-list" role="status">
+                    {unblockResult.failed.map((failure) => (
+                      <li key={failure.handle}>
+                        @{failure.handle}（
+                        {FAILURE_LABELS[language][failure.code] ?? failure.code}）
+                      </li>
+                    ))}
+                  </ul>
                 ) : null}
-              </p>
+              </>
             ) : null}
             {blockedCount ? (
               <button
@@ -647,6 +718,7 @@ export default function ListsView({
                 <span className="account-meta">{t.recommendListTitle}</span>
                 <em className="account-meta">{recommendList.length}</em>
               </button>
+              <OfficialLinkIcon target="whitelist" label={t.siteWhitelist} />
             </div>
             {showRecommended ? (
               recommendList.length > 0 ? (

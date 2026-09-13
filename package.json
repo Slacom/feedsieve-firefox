@@ -20,7 +20,8 @@
     "build:firefox": "pnpm --filter @feedsieve/extension build:firefox",
     "zip:firefox": "pnpm --filter @feedsieve/extension zip:firefox",
     "pack:firefox": "node scripts/pack-firefox.mjs",
-    "verify": "node scripts/verify.mjs"
+    "verify": "node scripts/verify.mjs",
+    "variant-tables:build": "node scripts/build-variant-tables.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -28,6 +29,8 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.11.0",
     "happy-dom": "^20.11.6",
+    "opencc-js": "^1.4.2",
+    "playwright": "1.62.1",
     "prettier": "^3.9.6",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.68.0",

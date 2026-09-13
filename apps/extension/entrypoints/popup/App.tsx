@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   parseSnapshotBody,
   type CommunityEntry,
   type WhitelistEntry,
 } from '@feedsieve/community-lists';
 import { shouldPauseDestructive, type XAdapterCapabilities } from '@feedsieve/x-adapter';
+import { ensureVariantTables } from '../../src/lib/detection/keyword-rules';
 import { getBlockedAccounts, subscribeBlocked } from '../../src/lib/community/blocked-accounts';
 import { getAllowlist, subscribeAllowlist } from '../../src/lib/community/allowlist';
 import { getFollowingAllowlist, subscribeFollowingAllowlist } from '../../src/lib/community/following-allowlist';
@@ -70,6 +71,8 @@ export default function App() {
   const [capabilities, setCapabilities] = useState<XAdapterCapabilities | null>(null);
   const [community, setCommunity] = useState<CommunitySettings | null>(null);
   const [communityEntries, setCommunityEntries] = useState<CommunityEntry[]>([]);
+  // 社区快照在拉取中：名单 tab 先给骨架，不闪「空态」误导用户（有三秒超时兜底不必）
+  const [communityEntriesLoading, setCommunityEntriesLoading] = useState(true);
   // 推荐白名单：快照 whitelist 段随名单一起下发，只读展示不做任何操作；
   // note 是维护者的公开背书理由（仓库 whitelist.yaml 强制字段），名单页直接展示
   const [recommendList, setRecommendList] = useState<WhitelistEntry[]>([]);
@@ -84,6 +87,7 @@ export default function App() {
 
   const applyCommunitySnapshotState = useCallback(
     (snapshot: Awaited<ReturnType<typeof getCommunitySnapshot>>): void => {
+      setCommunityEntriesLoading(false);
       if (!snapshot) {
         setCommunityEntries([]);
         setRecommendList([]);
@@ -154,6 +158,8 @@ export default function App() {
   );
 
   useEffect(() => {
+    // 变体映射是随包资源：弹窗内自定义词去重/校验依赖它，进弹窗先预热
+    void ensureVariantTables();
     void getUiLanguage().then(setLanguage);
     void getCommunitySettings().then(setCommunity);
     void getCommunitySnapshot().then(applyCommunitySnapshotState);
@@ -312,14 +318,23 @@ export default function App() {
   const pauseDestructive =
     killSwitchActive || (capabilities ? shouldPauseDestructive(capabilities) : false);
   const pageCount = pageMarked?.length ?? null;
-  const protectedHandles = new Set([
-    ...allowlist.map((item) => item.handle),
-    ...following.map((item) => item.handle),
-    ...blocked.map((item) => item.handle),
-  ]);
-  const communityTodo = communityEntries.filter(
-    (entry) => !protectedHandles.has(entry.handle.toLowerCase()),
-  ).length;
+  // 名单数千条时的 Set 构建/过滤别跟 toast、计时器等无关渲染一起跑
+  const protectedHandles = useMemo(
+    () =>
+      new Set([
+        ...allowlist.map((item) => item.handle),
+        ...following.map((item) => item.handle),
+        ...blocked.map((item) => item.handle),
+      ]),
+    [allowlist, following, blocked],
+  );
+  const communityTodoCount = useMemo(
+    () =>
+      communityEntries.filter(
+        (entry) => !protectedHandles.has(entry.handle.toLowerCase()),
+      ).length,
+    [communityEntries, protectedHandles],
+  );
 
   return (
     <main className="popup">
@@ -356,6 +371,7 @@ export default function App() {
               refreshPageMarked={refreshPageMarked}
               pauseDestructive={pauseDestructive}
               communityEntries={communityEntries}
+              communityEntriesLoading={communityEntriesLoading}
               recommendList={recommendList}
             />
           </>
@@ -405,8 +421,8 @@ export default function App() {
         >
           <span className="nav-icon-wrap">
             <AppIcon name="lists" />
-            {communityTodo ? (
-              <span className="nav-badge">{Math.min(communityTodo, 99)}</span>
+            {communityTodoCount ? (
+              <span className="nav-badge">{Math.min(communityTodoCount, 99)}</span>
             ) : null}
           </span>
           <span>{t.lists}</span>

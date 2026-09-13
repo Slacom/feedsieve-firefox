@@ -12,6 +12,7 @@
 
 import {
   detect,
+  contactNumberBait,
   type DetectInput,
   type Detection,
   type HeuristicRule,
@@ -28,7 +29,7 @@ import type { KeywordPackCatalog } from './keyword-packs';
 export type { BlockEvidence };
 
 export interface DetectionPipelineInput {
-  input: DetectInput;
+  input: DetectInput & { postId?: string };
   community: RuntimeCommunity | null;
   builtinList: ReadonlySet<string>;
   keywordHeuristics: readonly HeuristicRule[];
@@ -92,29 +93,33 @@ export function communityHitReason(
 }
 
 export function runDetectionPipeline(input: DetectionPipelineInput): DetectionPipelineResult {
-  const { input: source, community, builtinList, keywordHeuristics, catalog, strength, uiLanguage } =
-    input;
+  const {
+    input: source,
+    community,
+    builtinList,
+    keywordHeuristics,
+    catalog,
+    strength,
+    uiLanguage,
+  } = input;
+
+  // 先保留当前页面材料：即使社区白名单使检测豁免，用户仍可显式覆盖并手动拉黑。
+  const evidence = collectContentEvidence(source);
 
   // 推荐白名单（whitelist）与社区白名单（verified）一票豁免：被验证为「误标正常」
   // 的账号在任何识别（社区名单 / 指纹 / 域名 / 词包）之前直接放行。与黑名单数学互斥，
   // 此先查是防御性兜底——即便服务端异常双发，也以「验证正常」为准。
   const verifiedHandle = source.handle.trim().replace(/^@+/, '').toLowerCase();
-  if (
-    community?.whitelistSet.has(verifiedHandle) ||
-    community?.verifiedSet.has(verifiedHandle)
-  ) {
+  if (community?.whitelistSet.has(verifiedHandle) || community?.verifiedSet.has(verifiedHandle)) {
     return {
       detection: null,
-      evidence: {},
+      evidence,
       communityEntry: null,
       communityCategory: undefined,
       category: undefined,
       presentation: 'ignore',
     };
   }
-
-  // 内容证据只用于用户主动标记或高置信命中后的社区证据。
-  const evidence = collectContentEvidence(source);
 
   // 识别顺序：社区快照名单 -> 内置名单兜底 -> 用户/官方可配置词库。
   const evidenceOptions = {
@@ -144,10 +149,11 @@ export function runDetectionPipeline(input: DetectionPipelineInput): DetectionPi
   if (!detection) {
     detection = detect(source, {
       ...evidenceOptions,
-      // 用户明确配置的字面短语 / 官方词库，加上弱信号组合层——唯一升到页面的
-      // 内置启发式（乱码批量号锚点 + 内容佐证，分层见 detection-policy；
-      // 其余内置单信号规则仍只留在 detector 评测层）。排在词库规则之后收尾。
-      heuristics: [...keywordHeuristics, weakSignalCombo],
+      // 用户明确配置的字面短语 / 官方词库，加上两个直线双信号内置启发式——
+      // weak-signal-combo（乱码/数字批量号锚点 + 内容佐证）与
+      // contact-number-bait（正文长数字载荷 + 简介钩子），分层见 detection-policy；
+      // 其余内置单信号规则仍只留在 detector 评测层。排在词库规则之后收尾。
+      heuristics: [...keywordHeuristics, weakSignalCombo, contactNumberBait],
     });
   }
 
@@ -209,7 +215,11 @@ export function runDetectionPipeline(input: DetectionPipelineInput): DetectionPi
 
   return {
     detection: presentation === 'ignore' ? null : detection,
-    evidence,
+    evidence: {
+      ...evidence,
+      detectionSource: detection.source,
+      ...(detection.ruleId ? { ruleId: detection.ruleId, signalIds: [detection.ruleId] } : {}),
+    },
     communityEntry,
     communityCategory,
     category,

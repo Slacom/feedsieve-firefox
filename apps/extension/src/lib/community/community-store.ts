@@ -1,3 +1,4 @@
+import { loadRuntimeData } from '../platform/runtime-data';
 /**
  * 社区名单本地状态：快照缓存（last-known-good）+ 用户设置。
  * 快照的拉取/校验逻辑在 @feedsieve/community-lists（纯函数），
@@ -15,7 +16,6 @@ import {
   type StoredSnapshot,
   type SyncSource,
 } from '@feedsieve/community-lists';
-import bundledSnapshotJson from '../../../../../community/lists/official.json';
 import { API_BASE } from '../platform/api-base';
 import { supportsFirefoxDataCollectionConsent } from '../platform/firefox-data-consent';
 
@@ -43,12 +43,41 @@ function cleanupLegacySnapshot(): void {
     // 清理失败不影响功能
   });
 }
-const BUNDLED_SNAPSHOT_BODY = `${JSON.stringify(bundledSnapshotJson, null, 2)}\n`;
-const BUNDLED_SNAPSHOT: StoredSnapshot = {
-  snapshot_version: bundledSnapshotJson.snapshot_version,
-  body: BUNDLED_SNAPSHOT_BODY,
-  synced_at: Date.parse(bundledSnapshotJson.generated_at),
-};
+// 随包发布的最终名单不走 JS bundle：构建时由 wxt.config officialJsonPlugin 拷入
+// public/community/lists/，由后台读取并缓存到 storage（无网络依赖）。
+// 此前静态 import 让 background / content / popup 三个入口各抄一份，产物膨胀到 4 MB。
+const BUNDLED_SNAPSHOT_URL = '/community/lists/official.json';
+let bundledSnapshotCache: StoredSnapshot | null | undefined;
+export async function getBundledSnapshot(): Promise<StoredSnapshot | null> {
+  if (bundledSnapshotCache !== undefined) return bundledSnapshotCache;
+  try {
+    const raw = (await loadRuntimeData(BUNDLED_SNAPSHOT_URL)) as {
+      snapshot_version: string;
+      generated_at: string;
+      entries: unknown;
+    };
+    const parsed = parseSnapshotBody(`${JSON.stringify(raw)}\n`);
+    if (!parsed.ok) throw new Error('Invalid bundled community snapshot');
+    bundledSnapshotCache = {
+      snapshot_version: raw.snapshot_version,
+      body: `${JSON.stringify(raw)}\n`,
+      synced_at: Date.parse(raw.generated_at),
+    };
+  } catch (error) {
+    console.error('[FeedSieve] 随包名单加载失败，下次读取将重试:', error);
+    return null;
+  }
+  return bundledSnapshotCache;
+}
+
+/** 随包名单的 entries（content script 离线兜底用），与 getBundledSnapshot 共享一次 fetch。 */
+export async function getBundledEntries(): Promise<unknown> {
+  const snap = await getBundledSnapshot();
+  if (!snap) return [];
+  // 与 getStoredCommunitySnapshot 共享解析缓存，不再重复 JSON.parse / 验签
+  const parsed = parseSnapshotCached(snap.body);
+  return parsed.ok ? (parsed.value.entries ?? []) : [];
+}
 
 export interface CommunitySettings {
   /** 社区名单总开关（关掉后只跑启发式 + 内置名单） */
@@ -70,12 +99,27 @@ export const DEFAULT_COMMUNITY_SETTINGS: CommunitySettings = {
   autoContribute: true,
 };
 
+/**
+ * 快照 body 解析结果按 body 字符串缓存：body 几 MB 且内容不可变，
+ * 但拉黑队列每个任务 / 每次 pause 门控回退都会重走 parseSnapshotBody
+ * （批量队列曾每秒重解析 2MB JSON）。单槽足够——新快照即新 body。
+ */
+type ParsedSnapshot = ReturnType<typeof parseSnapshotBody>;
+let parsedSnapshotSlot: { body: string; parsed: ParsedSnapshot } | null = null;
+
+function parseSnapshotCached(body: string): ParsedSnapshot {
+  if (parsedSnapshotSlot?.body !== body) {
+    parsedSnapshotSlot = { body, parsed: parseSnapshotBody(body) };
+  }
+  return parsedSnapshotSlot.parsed;
+}
+
 async function getStoredCommunitySnapshot(): Promise<StoredSnapshot | null> {
   cleanupLegacySnapshot();
   const result = await browser.storage.local.get(SNAPSHOT_KEY);
   const value = result[SNAPSHOT_KEY] as StoredSnapshot | undefined;
   if (value && typeof value.snapshot_version === 'string' && typeof value.body === 'string') {
-    const parsed = parseSnapshotBody(value.body);
+    const parsed = parseSnapshotCached(value.body);
     if (parsed.ok && parsed.value.snapshot_version === value.snapshot_version) {
       return value;
     }
@@ -87,7 +131,7 @@ export async function getCommunitySnapshot(): Promise<StoredSnapshot | null> {
   const stored = await getStoredCommunitySnapshot();
   if (stored) return stored;
   // 首装、开发环境无 API、旧 schema 缓存失效时仍能使用随扩展发布的最终名单。
-  return BUNDLED_SNAPSHOT;
+  return getBundledSnapshot();
 }
 
 export async function setCommunitySnapshot(value: StoredSnapshot): Promise<void> {
@@ -100,7 +144,7 @@ export async function getCommunityKillSwitch(): Promise<
 > {
   const stored = await getStoredCommunitySnapshot();
   if (!stored) return undefined;
-  const parsed = parseSnapshotBody(stored.body);
+  const parsed = parseSnapshotCached(stored.body);
   return parsed.ok ? parsed.value.kill_switch : undefined;
 }
 
@@ -121,7 +165,11 @@ export async function requestOfficialPauseCheck(): Promise<OfficialPauseState> {
     })) as { paused?: unknown; reason?: string; disabledSince?: string } | null | undefined;
     if (res && typeof res.paused === 'boolean') {
       return res.paused
-        ? { destructive_actions_disabled: true, reason: res.reason, disabled_since: res.disabledSince }
+        ? {
+            destructive_actions_disabled: true,
+            reason: res.reason,
+            disabled_since: res.disabledSince,
+          }
         : { destructive_actions_disabled: false };
     }
   } catch {
