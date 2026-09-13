@@ -6,4 +6,11 @@
 
 本适配由 Codex 协助完成，尚未经过完整验证，当前版本仅建议用于测试和评估。
 
-构建与临时加载说明见 [`docs/FIREFOX.md`](docs/FIREFOX.md)。
+## Firefox 安装测试
+
+1. 从 [Releases](https://github.com/Slacom/feedsieve-firefox/releases) 下载 Firefox 压缩包并解压。
+2. 在 Firefox 地址栏打开 `about:debugging#/runtime/this-firefox`。
+3. 点击“临时载入附加组件”，选择解压目录中的 `manifest.json`。
+4. 打开或刷新 `x.com`，即可开始测试。Firefox 重启后需重新加载。
+
+构建与更多说明见 [`docs/FIREFOX.md`](docs/FIREFOX.md)。
